@@ -19,19 +19,35 @@ Item {
   readonly property var pluginSettings: currentSettings()
   readonly property string selectedCorner: HudModel.normalizeCorner(setting("corner", "bottom-left"))
   readonly property int displayDuration: HudModel.parseDuration(setting("durationMs", 1500))
-  readonly property var workspaces: hudModel && Array.isArray(hudModel.workspaces)
-    ? hudModel.workspaces
+  readonly property int focusedWorkspaceId: Hyprland.focusedWorkspace
+    ? Number(Hyprland.focusedWorkspace.id) || 0
+    : 0
+  readonly property string focusedMonitorName: {
+    var workspace = Hyprland.focusedWorkspace
+    if (workspace && workspace.monitor && workspace.monitor.name !== undefined)
+      return String(workspace.monitor.name)
+
+    var monitor = Hyprland.focusedMonitor
+    return monitor && monitor.name !== undefined ? String(monitor.name) : ""
+  }
+  readonly property var displayModel: HudModel.activateWorkspace(
+    hudModel,
+    focusedWorkspaceId,
+    focusedMonitorName
+  )
+  readonly property var workspaces: displayModel && Array.isArray(displayModel.workspaces)
+    ? displayModel.workspaces
     : []
-  readonly property string targetMonitorName: hudModel
-    ? String(hudModel.targetMonitorName || "")
+  readonly property string targetMonitorName: displayModel
+    ? String(displayModel.targetMonitorName || "")
     : ""
 
   readonly property int cardPadding: Style.space(10)
   readonly property int gridGap: Style.space(7)
-  readonly property int tileWidth: Style.space(92)
-  readonly property int tileHeight: Style.space(58)
-  readonly property int gridColumns: Math.max(1, Math.min(5, workspaces.length))
-  readonly property int gridRows: Math.max(1, Math.ceil(workspaces.length / gridColumns))
+  readonly property int tileWidth: Style.space(46)
+  readonly property int tileHeight: Style.space(29)
+  readonly property int gridColumns: Math.max(1, workspaces.length)
+  readonly property int gridRows: 1
   readonly property int gridWidth: gridColumns * tileWidth + Math.max(0, gridColumns - 1) * gridGap
   readonly property int gridHeight: gridRows * tileHeight + Math.max(0, gridRows - 1) * gridGap
 
@@ -40,8 +56,8 @@ Item {
     activeWorkspaceId: 0,
     workspaces: []
   })
-  property real hudOpacity: 0
   property bool showRequested: false
+  property bool snapshotInFlight: false
   property bool snapshotQueued: false
   property bool snapshotStreamDone: false
   property bool snapshotExited: false
@@ -169,48 +185,57 @@ Item {
   function requestShow() {
     showRequested = true
     hideTimer.stop()
-    closeTimer.stop()
-    snapshotDebounce.restart()
-    return "queued"
+    showCachedModel()
+    requestSnapshot()
+    return opened ? "visible" : "queued"
   }
 
-  function beginSnapshot() {
-    if (!showRequested) return
-    if (snapshotProcess.running) {
+  function showCachedModel() {
+    if (!targetMonitorName || workspaces.length === 0) return false
+
+    opened = true
+    state = "visible"
+    hideTimer.restart()
+    return true
+  }
+
+  function requestSnapshot() {
+    if (snapshotInFlight) {
       snapshotQueued = true
       return
     }
 
+    beginSnapshot()
+  }
+
+  function beginSnapshot() {
+    if (snapshotInFlight) return
+
+    snapshotInFlight = true
     snapshotQueued = false
     snapshotStreamDone = false
     snapshotExited = false
     snapshotExitCode = -1
     snapshotOutput = ""
     lastError = ""
-    state = "querying"
+    state = opened ? "visible" : "querying"
     snapshotProcess.running = true
   }
 
   function finishSnapshot() {
     if (!snapshotStreamDone || !snapshotExited) return
 
+    snapshotInFlight = false
     var rerun = snapshotQueued
     snapshotQueued = false
 
-    if (rerun) {
-      showRequested = true
-      Qt.callLater(beginSnapshot)
-      return
-    }
-    if (!showRequested) return
-
     if (snapshotExitCode === 0) applySnapshot(snapshotOutput)
     else failSnapshot(lastError || "hyprctl workspace snapshot failed")
+
+    if (rerun) Qt.callLater(beginSnapshot)
   }
 
   function applySnapshot(raw) {
-    if (!showRequested) return
-
     var parsed
     try {
       parsed = JSON.parse(String(raw || ""))
@@ -232,20 +257,30 @@ Item {
     }
 
     hudModel = next
-    opened = true
-    hudOpacity = 1
-    state = "visible"
-    hideTimer.restart()
+    if (showRequested) {
+      if (!opened) showCachedModel()
+      else state = "visible"
+    } else {
+      state = "idle"
+    }
   }
 
   function failSnapshot(message) {
     lastError = String(message || "workspace snapshot failed")
+
+    if (!showRequested) {
+      state = "idle"
+      return
+    }
+    if (opened) {
+      state = "visible"
+      return
+    }
+
     state = "error"
     opened = false
-    hudOpacity = 0
     showRequested = false
     hideTimer.stop()
-    closeTimer.stop()
   }
 
   function open(payloadJson) {
@@ -255,41 +290,16 @@ Item {
   function close() {
     showRequested = false
     snapshotQueued = false
-    snapshotDebounce.stop()
     hideTimer.stop()
-    closeTimer.stop()
-    hudOpacity = 0
     opened = false
     state = "idle"
-  }
-
-  Timer {
-    id: snapshotDebounce
-    interval: 50
-    repeat: false
-    onTriggered: root.beginSnapshot()
   }
 
   Timer {
     id: hideTimer
     interval: root.displayDuration
     repeat: false
-    onTriggered: {
-      root.showRequested = false
-      root.state = "fading"
-      root.hudOpacity = 0
-      closeTimer.restart()
-    }
-  }
-
-  Timer {
-    id: closeTimer
-    interval: 130
-    repeat: false
-    onTriggered: {
-      root.opened = false
-      root.state = "idle"
-    }
+    onTriggered: root.close()
   }
 
   Process {
@@ -335,7 +345,10 @@ Item {
     function onValuesChanged() { root.refreshDesktopEntries() }
   }
 
-  Component.onCompleted: root.refreshDesktopEntries()
+  Component.onCompleted: {
+    root.refreshDesktopEntries()
+    root.requestSnapshot()
+  }
 
   Variants {
     model: Quickshell.screens
@@ -410,14 +423,6 @@ Item {
           Math.max(1, Style.space(1))
         )
         radius: 0
-        opacity: root.hudOpacity
-
-        Behavior on opacity {
-          NumberAnimation {
-            duration: 130
-            easing.type: Easing.OutQuad
-          }
-        }
 
         Grid {
           id: workspaceGrid
@@ -437,7 +442,10 @@ Item {
               id: workspaceTile
               required property var modelData
               readonly property var workspace: modelData
-              readonly property color diagramColor: workspace.active
+              readonly property color workspaceBackground: workspace.active
+                ? Color.foreground
+                : Util.alpha(Color.popups.text, 0.035)
+              readonly property color workspaceForeground: workspace.active
                 ? Color.background
                 : Color.popups.text
 
@@ -455,13 +463,8 @@ Item {
                 anchors.centerIn: parent
                 width: Math.min(workspaceTile.width, workspaceTile.height * workspaceAspect)
                 height: Math.min(workspaceTile.height, workspaceTile.width / workspaceAspect)
-                color: workspaceTile.workspace.active
-                  ? Color.foreground
-                  : Util.alpha(Color.popups.text, 0.035)
-                border.color: workspaceTile.workspace.active
-                  ? "transparent"
-                  : Util.alpha(Color.popups.text, workspaceTile.workspace.empty ? 0.42 : 0.22)
-                border.width: workspaceTile.workspace.active ? 0 : 1
+                color: workspaceTile.workspaceBackground
+                border.width: 0
                 radius: 0
 
                 Item {
@@ -485,7 +488,7 @@ Item {
                       width: Math.max(Style.space(4), Math.round(rawWidth * layoutFrame.width))
                       height: Math.max(Style.space(4), Math.round(rawHeight * layoutFrame.height))
                       color: Util.alpha(
-                        workspaceTile.diagramColor,
+                        workspaceTile.workspaceForeground,
                         windowData.fullscreen ? 0.19 : (windowData.floating ? 0.16 : 0.11)
                       )
                       border.color: windowData.floating
@@ -493,7 +496,7 @@ Item {
                           workspaceTile.workspace.active ? Color.background : Color.accent,
                           0.8
                         )
-                        : Util.alpha(workspaceTile.diagramColor, 0.42)
+                        : Util.alpha(workspaceTile.workspaceForeground, 0.42)
                       border.width: windowData.fullscreen ? Math.max(1, Style.space(2)) : 1
                       radius: 0
                       clip: true
@@ -539,24 +542,19 @@ Item {
 
                   anchors.left: parent.left
                   anchors.top: parent.top
-                  anchors.margins: Style.space(3)
+                  anchors.margins: 0
                   width: badgeSize
                   height: badgeSize
                   radius: 0
-                  color: workspaceTile.workspace.active
-                    ? Color.background
-                    : Util.alpha(Color.background, 0.88)
-                  border.color: workspaceTile.workspace.active
-                    ? Color.background
-                    : Util.alpha(Color.popups.text, 0.25)
-                  border.width: workspaceTile.workspace.active ? 0 : 1
+                  color: workspaceTile.workspaceBackground
+                  border.width: 0
 
                   Text {
                     id: numberLabel
 
                     anchors.centerIn: parent
-                    text: String(workspaceTile.workspace.id)
-                    color: workspaceTile.workspace.active ? Color.foreground : Color.popups.text
+                    text: HudModel.workspaceLabel(workspaceTile.workspace.id)
+                    color: workspaceTile.workspaceForeground
                     font.family: Style.font.family
                     font.pixelSize: Style.font.caption
                     font.bold: true

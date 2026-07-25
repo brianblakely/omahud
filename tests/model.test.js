@@ -1,10 +1,12 @@
 const assert = require("node:assert/strict")
 const {
+  activateWorkspace,
   buildWorkspaceModel,
   matchDesktopEntry,
   memberWebIdentity,
   normalizeCorner,
-  parseDuration
+  parseDuration,
+  workspaceLabel
 } = require("../HudModel.js")
 
 let passed = 0
@@ -73,6 +75,88 @@ test("accepts bounded durations and defaults invalid values", () => {
   assert.equal(parseDuration("500ms"), 1500)
   assert.equal(parseDuration(""), 1500)
   assert.equal(parseDuration(null), 1500)
+})
+
+test("formats workspace ten as zero without changing workspace identity", () => {
+  assert.equal(workspaceLabel(1), "1")
+  assert.equal(workspaceLabel(9), "9")
+  assert.equal(workspaceLabel(10), "0")
+  assert.equal(workspaceLabel(11), "11")
+  assert.equal(workspaceLabel("invalid"), "")
+})
+
+test("reactively activates a cached workspace without mutating the snapshot", () => {
+  const snapshot = {
+    targetMonitorName: "DP-1",
+    activeWorkspaceId: 2,
+    workspaces: [
+      {
+        id: 2,
+        monitorName: "DP-1",
+        active: true,
+        empty: false,
+        aspectRatio: 16 / 9,
+        windows: [{ x: 0, y: 0, width: 1, height: 1 }]
+      },
+      {
+        id: 10,
+        monitorName: "DP-1",
+        active: false,
+        empty: false,
+        aspectRatio: 16 / 9,
+        windows: [{ x: 0, y: 0, width: 0.5, height: 1 }]
+      }
+    ]
+  }
+
+  const activated = activateWorkspace(snapshot, 10, "DP-2")
+
+  assert.equal(activated.targetMonitorName, "DP-2")
+  assert.equal(activated.activeWorkspaceId, 10)
+  assert.deepEqual(
+    activated.workspaces.map(workspace => [workspace.id, workspace.active]),
+    [[2, false], [10, true]]
+  )
+  assert.equal(activated.workspaces[1].monitorName, "DP-2")
+  assert.equal(snapshot.activeWorkspaceId, 2)
+  assert.equal(snapshot.workspaces[0].active, true)
+  assert.equal(snapshot.workspaces[1].active, false)
+})
+
+test("adds a sorted empty placeholder for an uncached focused workspace", () => {
+  const snapshot = {
+    targetMonitorName: "DP-1",
+    activeWorkspaceId: 2,
+    workspaces: [
+      {
+        id: 10,
+        monitorName: "DP-1",
+        active: false,
+        empty: false,
+        aspectRatio: 16 / 9,
+        windows: [{}]
+      },
+      {
+        id: 2,
+        monitorName: "DP-1",
+        active: true,
+        empty: false,
+        aspectRatio: 16 / 9,
+        windows: [{}]
+      }
+    ]
+  }
+
+  const activated = activateWorkspace(snapshot, 7, "HDMI-A-1")
+
+  assert.deepEqual(activated.workspaces.map(workspace => workspace.id), [2, 7, 10])
+  assert.deepEqual(
+    activated.workspaces.filter(workspace => workspace.active).map(workspace => workspace.id),
+    [7]
+  )
+  assert.equal(activated.workspaces[1].monitorName, "HDMI-A-1")
+  assert.equal(activated.workspaces[1].empty, true)
+  assert.deepEqual(activated.workspaces[1].windows, [])
 })
 
 test("filters non-mapped and non-numbered clients and sorts workspace ids", () => {

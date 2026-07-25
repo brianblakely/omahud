@@ -628,6 +628,89 @@ function workspaceAspectRatio(monitor) {
   return monitor.width / monitor.height
 }
 
+function workspaceLabel(value) {
+  var workspaceId = positiveInteger(value)
+  if (workspaceId === 0) return ""
+  return workspaceId === 10 ? "0" : String(workspaceId)
+}
+
+function activateWorkspace(model, workspaceId, monitorName) {
+  model = model && typeof model === "object" ? model : {}
+
+  var activeWorkspaceId = positiveInteger(workspaceId)
+  var targetMonitorName = nonEmptyString(monitorName)
+    || nonEmptyString(model.targetMonitorName)
+  var source = Array.isArray(model.workspaces) ? model.workspaces : []
+  var fallbackAspectRatio = FALLBACK_ASPECT_RATIO
+  var fallbackAspectFound = false
+  var workspaces = []
+  var activeFound = false
+  var i
+
+  for (i = 0; i < source.length; i++) {
+    var aspectWorkspace = source[i]
+    if (!aspectWorkspace || typeof aspectWorkspace !== "object") continue
+
+    var aspectRatio = finiteNumber(aspectWorkspace.aspectRatio, 0)
+    if (aspectRatio <= 0) continue
+    if (!fallbackAspectFound) {
+      fallbackAspectRatio = aspectRatio
+      fallbackAspectFound = true
+    }
+    if (nonEmptyString(aspectWorkspace.monitorName) === targetMonitorName) {
+      fallbackAspectRatio = aspectRatio
+      break
+    }
+  }
+
+  for (i = 0; i < source.length; i++) {
+    var workspace = source[i]
+    if (!workspace || typeof workspace !== "object") continue
+
+    var id = positiveInteger(workspace.id)
+    if (id === 0) continue
+
+    var windows = Array.isArray(workspace.windows) ? workspace.windows : []
+    var active = activeWorkspaceId > 0 && id === activeWorkspaceId
+    activeFound = activeFound || active
+
+    workspaces.push({
+      id: id,
+      monitorName: active && targetMonitorName
+        ? targetMonitorName
+        : nonEmptyString(workspace.monitorName),
+      active: active,
+      empty: windows.length === 0,
+      aspectRatio: Math.max(
+        0.1,
+        finiteNumber(workspace.aspectRatio, FALLBACK_ASPECT_RATIO)
+      ),
+      windows: windows
+    })
+  }
+
+  if (activeWorkspaceId > 0 && !activeFound) {
+    workspaces.push({
+      id: activeWorkspaceId,
+      monitorName: targetMonitorName,
+      active: true,
+      empty: true,
+      aspectRatio: fallbackAspectRatio,
+      windows: []
+    })
+  }
+
+  workspaces.sort(function (first, second) {
+    return first.id - second.id
+  })
+
+  return {
+    targetMonitorName: targetMonitorName,
+    activeWorkspaceId: activeWorkspaceId,
+    workspaces: workspaces
+  }
+}
+
 function buildWorkspaceModel(monitors, clients) {
   var normalizedMonitors = normalizeMonitors(monitors)
   var targetMonitor = focusedMonitor(normalizedMonitors)
@@ -701,10 +784,12 @@ function buildWorkspaceModel(monitors, clients) {
 
 if (typeof module !== "undefined") {
   module.exports = {
+    activateWorkspace: activateWorkspace,
     buildWorkspaceModel: buildWorkspaceModel,
     matchDesktopEntry: matchDesktopEntry,
     memberWebIdentity: memberWebIdentity,
     normalizeCorner: normalizeCorner,
-    parseDuration: parseDuration
+    parseDuration: parseDuration,
+    workspaceLabel: workspaceLabel
   }
 }
