@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "b.omahud",
+  "name": "OmaHUD",
+  "version": "0.0.1",
+  "author": "Brian Blakely",
+  "description": "Briefly show workspace layouts and application icons when switching workspaces",
+  "kinds": [
+    "panel"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "panel": "Panel.qml"
+  }
+}
