@@ -3,7 +3,6 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Wayland
-import Quickshell.Widgets
 import qs.Commons
 import qs.Ui
 import "HudModel.js" as HudModel
@@ -48,6 +47,7 @@ Item {
   property bool snapshotExited: false
   property int snapshotExitCode: -1
   property string snapshotOutput: ""
+  property var desktopEntries: []
   property string lastError: ""
   property string state: "idle"
 
@@ -116,25 +116,48 @@ Item {
     return screen && screen.name !== undefined ? String(screen.name) : ""
   }
 
-  function iconSource(candidates) {
-    var values = Array.isArray(candidates) ? candidates : []
+  function refreshDesktopEntries() {
+    var next = []
+    try {
+      var values = DesktopEntries.applications.values || []
+      for (var i = 0; i < values.length; i++) {
+        if (values[i]) next.push(values[i])
+      }
+    } catch (error) {}
+    desktopEntries = next
+  }
 
-    for (var i = 0; i < values.length; i++) {
-      var candidate = String(values[i] || "").trim()
-      if (!candidate) continue
+  function iconSource(member) {
+    var entry = HudModel.matchDesktopEntry(member, desktopEntries)
+    var candidates = member && Array.isArray(member.iconCandidates)
+      ? member.iconCandidates
+      : []
 
-      try {
-        var entry = DesktopEntries.heuristicLookup(candidate)
-        if (entry && entry.icon) {
-          if (shell && shell.appLibrary && typeof shell.appLibrary.iconSource === "function")
-            return shell.appLibrary.iconSource(entry.icon)
+    if (!entry) {
+      for (var i = 0; i < candidates.length && !entry; i++) {
+        var candidate = String(candidates[i] || "").trim()
+        if (!candidate) continue
 
-          var entryIcon = Quickshell.iconPath(String(entry.icon), true)
-          if (entryIcon) return entryIcon
-        }
-      } catch (error) {}
+        try {
+          entry = DesktopEntries.byId(candidate)
+            || DesktopEntries.byId(candidate + ".desktop")
+            || DesktopEntries.heuristicLookup(candidate)
+        } catch (error) {}
+      }
+    }
 
-      var classIcon = Quickshell.iconPath(candidate, true)
+    if (entry && entry.icon) {
+      if (shell && shell.appLibrary && typeof shell.appLibrary.iconSource === "function")
+        return shell.appLibrary.iconSource(entry.icon)
+
+      var entryIcon = Quickshell.iconPath(String(entry.icon), true)
+      if (entryIcon) return entryIcon
+    }
+
+    for (var j = 0; j < candidates.length; j++) {
+      var classIconCandidate = String(candidates[j] || "").trim()
+      if (!classIconCandidate) continue
+      var classIcon = Quickshell.iconPath(classIconCandidate, true)
       if (classIcon) return classIcon
     }
 
@@ -307,6 +330,13 @@ Item {
     }
   }
 
+  Connections {
+    target: DesktopEntries.applications
+    function onValuesChanged() { root.refreshDesktopEntries() }
+  }
+
+  Component.onCompleted: root.refreshDesktopEntries()
+
   Variants {
     model: Quickshell.screens
 
@@ -379,7 +409,7 @@ Item {
           Color.popups.border,
           Math.max(1, Style.space(1))
         )
-        radius: Style.cornerRadius
+        radius: 0
         opacity: root.hudOpacity
 
         Behavior on opacity {
@@ -407,7 +437,9 @@ Item {
               id: workspaceTile
               required property var modelData
               readonly property var workspace: modelData
-              readonly property int inset: Style.space(3)
+              readonly property color diagramColor: workspace.active
+                ? Color.background
+                : Color.popups.text
 
               width: root.tileWidth
               height: root.tileHeight
@@ -424,19 +456,18 @@ Item {
                 width: Math.min(workspaceTile.width, workspaceTile.height * workspaceAspect)
                 height: Math.min(workspaceTile.height, workspaceTile.width / workspaceAspect)
                 color: workspaceTile.workspace.active
-                  ? Util.alpha(Color.accent, 0.12)
+                  ? Color.foreground
                   : Util.alpha(Color.popups.text, 0.035)
                 border.color: workspaceTile.workspace.active
-                  ? Color.accent
+                  ? "transparent"
                   : Util.alpha(Color.popups.text, workspaceTile.workspace.empty ? 0.42 : 0.22)
-                border.width: workspaceTile.workspace.active ? Math.max(1, Style.space(2)) : 1
-                radius: Math.max(1, Style.space(4))
+                border.width: workspaceTile.workspace.active ? 0 : 1
+                radius: 0
 
                 Item {
                   id: layoutFrame
 
                   anchors.fill: parent
-                  anchors.margins: workspaceTile.inset
                   clip: true
 
                   Repeater {
@@ -454,14 +485,17 @@ Item {
                       width: Math.max(Style.space(4), Math.round(rawWidth * layoutFrame.width))
                       height: Math.max(Style.space(4), Math.round(rawHeight * layoutFrame.height))
                       color: Util.alpha(
-                        Color.popups.text,
+                        workspaceTile.diagramColor,
                         windowData.fullscreen ? 0.19 : (windowData.floating ? 0.16 : 0.11)
                       )
                       border.color: windowData.floating
-                        ? Util.alpha(Color.accent, 0.8)
-                        : Util.alpha(Color.popups.text, 0.42)
+                        ? Util.alpha(
+                          workspaceTile.workspace.active ? Color.background : Color.accent,
+                          0.8
+                        )
+                        : Util.alpha(workspaceTile.diagramColor, 0.42)
                       border.width: windowData.fullscreen ? Math.max(1, Style.space(2)) : 1
-                      radius: Math.max(1, Style.space(2))
+                      radius: 0
                       clip: true
 
                       Row {
@@ -478,12 +512,17 @@ Item {
                         Repeater {
                           model: windowFrame.windowData.members || []
 
-                          IconImage {
+                          Image {
                             required property var modelData
 
                             width: Style.space(14)
                             height: width
-                            source: root.iconSource(modelData.iconCandidates)
+                            fillMode: Image.PreserveAspectFit
+                            sourceSize.width: width * Screen.devicePixelRatio
+                            sourceSize.height: height * Screen.devicePixelRatio
+                            asynchronous: true
+                            mipmap: true
+                            source: root.iconSource(modelData)
                           }
                         }
                       }
@@ -494,26 +533,30 @@ Item {
                 Rectangle {
                   id: numberBadge
 
+                  readonly property int badgeSize: Math.ceil(
+                    Math.max(numberLabel.implicitWidth, numberLabel.implicitHeight)
+                  ) + Style.space(4)
+
                   anchors.left: parent.left
                   anchors.top: parent.top
                   anchors.margins: Style.space(3)
-                  width: numberLabel.implicitWidth + Style.space(6)
-                  height: numberLabel.implicitHeight + Style.space(2)
-                  radius: height / 2
+                  width: badgeSize
+                  height: badgeSize
+                  radius: 0
                   color: workspaceTile.workspace.active
-                    ? Color.accent
+                    ? Color.background
                     : Util.alpha(Color.background, 0.88)
                   border.color: workspaceTile.workspace.active
-                    ? Color.accent
+                    ? Color.background
                     : Util.alpha(Color.popups.text, 0.25)
-                  border.width: 1
+                  border.width: workspaceTile.workspace.active ? 0 : 1
 
                   Text {
                     id: numberLabel
 
                     anchors.centerIn: parent
                     text: String(workspaceTile.workspace.id)
-                    color: workspaceTile.workspace.active ? Color.background : Color.popups.text
+                    color: workspaceTile.workspace.active ? Color.foreground : Color.popups.text
                     font.family: Style.font.family
                     font.pixelSize: Style.font.caption
                     font.bold: true

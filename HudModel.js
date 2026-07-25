@@ -178,6 +178,250 @@ function iconCandidates(client) {
   return candidates
 }
 
+function lowerString(value) {
+  return nonEmptyString(value).toLowerCase()
+}
+
+function desktopId(value) {
+  var id = lowerString(value)
+  return id.slice(-8) === ".desktop" ? id.slice(0, -8) : id
+}
+
+function compactIdentity(value) {
+  return lowerString(value).replace(/[^a-z0-9]+/g, "")
+}
+
+function finalIdentityToken(value) {
+  var tokens = lowerString(value).split(/[^a-z0-9]+/)
+  for (var i = tokens.length - 1; i >= 0; i--) {
+    if (tokens[i].length >= 3) return tokens[i]
+  }
+  return ""
+}
+
+function objectString(object, property) {
+  try {
+    return object ? nonEmptyString(object[property]) : ""
+  } catch (error) {
+    return ""
+  }
+}
+
+function memberIdentityCandidates(member) {
+  member = member && typeof member === "object" ? member : {}
+
+  var input = Array.isArray(member.iconCandidates) ? member.iconCandidates.slice() : []
+  input.push(member.className)
+  input.push(member.initialClass)
+
+  var output = []
+  for (var i = 0; i < input.length; i++) {
+    var candidate = nonEmptyString(input[i])
+    if (candidate.length > 0 && output.indexOf(candidate) === -1) output.push(candidate)
+  }
+  return output
+}
+
+function normalizeWebHost(value) {
+  var host = lowerString(value)
+    .replace(/^[a-z]+:\/\//, "")
+    .replace(/[/:].*$/, "")
+    .replace(/^www\./, "")
+  return /^[a-z0-9.-]+\.[a-z0-9-]+$/.test(host) ? host : ""
+}
+
+function normalizeWebPath(value) {
+  var path = lowerString(value)
+  if (!path || path === "/") return ""
+  path = path.replace(/^[^/]*:\/\//, "")
+  var slash = path.indexOf("/")
+  if (slash >= 0) path = path.slice(slash)
+  if (path.charAt(0) !== "/") path = "/" + path
+  return path.replace(/\/+$/, "")
+}
+
+function initialTitleWebIdentity(value) {
+  var raw = lowerString(value)
+  var marker = raw.indexOf("_/")
+  if (marker <= 0) return null
+
+  var host = normalizeWebHost(raw.slice(0, marker))
+  if (!host) return null
+  return {
+    host: host,
+    path: normalizeWebPath(raw.slice(marker + 1))
+  }
+}
+
+function classWebIdentity(value) {
+  var raw = nonEmptyString(value)
+  var match = raw.match(
+    /^(?:chrome|chromium|google-chrome|brave(?:-browser)?|microsoft-edge|opera|vivaldi(?:-stable)?|helium)-(.+?)-Default$/i
+  )
+  if (!match) return null
+
+  var identity = match[1]
+  var marker = identity.indexOf("__")
+  var host = normalizeWebHost(marker >= 0 ? identity.slice(0, marker) : identity)
+  if (!host) return null
+
+  return {
+    host: host,
+    path: marker >= 0
+      ? normalizeWebPath(identity.slice(marker + 2).replace(/_/g, "/"))
+      : ""
+  }
+}
+
+function memberWebIdentity(member) {
+  member = member && typeof member === "object" ? member : {}
+
+  var fromTitle = initialTitleWebIdentity(member.initialTitle)
+  if (fromTitle) return fromTitle
+
+  var candidates = memberIdentityCandidates(member)
+  for (var i = 0; i < candidates.length; i++) {
+    var fromClass = classWebIdentity(candidates[i])
+    if (fromClass) return fromClass
+  }
+  return null
+}
+
+function execWebIdentity(value) {
+  var match = nonEmptyString(value).match(/https?:\/\/([a-z0-9.-]+)(\/[^\s"'%]*)?/i)
+  if (!match) return null
+
+  var host = normalizeWebHost(match[1])
+  if (!host) return null
+  return {
+    host: host,
+    path: normalizeWebPath(match[2] || "")
+  }
+}
+
+function executableName(value) {
+  var raw = nonEmptyString(value)
+  if (!raw) return ""
+
+  var match = raw.match(/^(?:"([^"]+)"|'([^']+)'|([^\s]+))/)
+  var executable = match ? (match[1] || match[2] || match[3] || "") : ""
+  var slash = executable.lastIndexOf("/")
+  if (slash >= 0) executable = executable.slice(slash + 1)
+  return desktopId(executable)
+}
+
+function webIdentityLabel(identity) {
+  if (!identity || !identity.host) return ""
+
+  var ignored = {
+    app: true,
+    com: true,
+    dev: true,
+    io: true,
+    mail: true,
+    net: true,
+    org: true,
+    tv: true,
+    web: true,
+    www: true
+  }
+  var labels = identity.host.split(".")
+  for (var i = 0; i < labels.length; i++) {
+    if (labels[i].length >= 3 && !ignored[labels[i]]) return labels[i]
+  }
+  return ""
+}
+
+function matchDesktopEntry(member, entries) {
+  var values = entries && typeof entries.length === "number" ? entries : []
+  var candidates = memberIdentityCandidates(member)
+  var i
+  var j
+
+  for (i = 0; i < candidates.length; i++) {
+    var candidateId = desktopId(candidates[i])
+    var candidateLower = lowerString(candidates[i])
+
+    for (j = 0; j < values.length; j++) {
+      var exactEntry = values[j]
+      if (!exactEntry) continue
+      if (desktopId(objectString(exactEntry, "id")) === candidateId
+          || lowerString(objectString(exactEntry, "startupClass")) === candidateLower) {
+        return exactEntry
+      }
+    }
+  }
+
+  var webIdentity = memberWebIdentity(member)
+  if (webIdentity) {
+    var bestWebEntry = null
+    var bestWebScore = -1
+
+    for (i = 0; i < values.length; i++) {
+      var webEntry = values[i]
+      if (!webEntry) continue
+      var entryIdentity = execWebIdentity(objectString(webEntry, "execString"))
+      if (!entryIdentity || entryIdentity.host !== webIdentity.host) continue
+
+      var score = 100
+      if (webIdentity.path && entryIdentity.path) {
+        if (webIdentity.path === entryIdentity.path) score += 30
+        else if (webIdentity.path.indexOf(entryIdentity.path) === 0
+            || entryIdentity.path.indexOf(webIdentity.path) === 0) score += 20
+      }
+      if (score > bestWebScore) {
+        bestWebScore = score
+        bestWebEntry = webEntry
+      }
+    }
+
+    if (bestWebEntry) return bestWebEntry
+
+    var webLabel = webIdentityLabel(webIdentity)
+    if (webLabel) {
+      for (i = 0; i < values.length; i++) {
+        var labelEntry = values[i]
+        if (!labelEntry) continue
+        if (desktopId(objectString(labelEntry, "id")) === webLabel
+            || compactIdentity(objectString(labelEntry, "name")) === compactIdentity(webLabel)) {
+          return labelEntry
+        }
+      }
+    }
+  }
+
+  for (i = 0; i < candidates.length; i++) {
+    var candidateCompact = compactIdentity(candidates[i])
+    var candidateToken = finalIdentityToken(candidates[i])
+    if (!candidateCompact) continue
+
+    for (j = 0; j < values.length; j++) {
+      var entry = values[j]
+      if (!entry) continue
+
+      var id = desktopId(objectString(entry, "id"))
+      var startup = compactIdentity(objectString(entry, "startupClass"))
+      var name = compactIdentity(objectString(entry, "name"))
+      var executable = executableName(objectString(entry, "execString"))
+
+      if (candidateCompact === compactIdentity(id)
+          || candidateCompact === startup
+          || candidateCompact === name
+          || candidateCompact === compactIdentity(executable)
+          || (candidateToken && (candidateToken === id || candidateToken === executable))) {
+        return entry
+      }
+
+      if (id && candidateCompact.indexOf(compactIdentity(id)) === 0) {
+        var suffix = candidateCompact.slice(compactIdentity(id).length)
+        if (suffix === "manager" || suffix === "machine" || suffix === "vm") return entry
+      }
+    }
+  }
+
+  return null
+}
+
 function flag(value) {
   return value === true || value === 1 || value === "1"
 }
@@ -212,6 +456,7 @@ function clientEntry(client, workspaceId, monitor, inputIndex) {
     member: {
       address: address,
       title: nonEmptyString(client.title),
+      initialTitle: nonEmptyString(client.initialTitle),
       className: nonEmptyString(client["class"]),
       initialClass: nonEmptyString(client.initialClass),
       iconCandidates: iconCandidates(client)
@@ -457,6 +702,8 @@ function buildWorkspaceModel(monitors, clients) {
 if (typeof module !== "undefined") {
   module.exports = {
     buildWorkspaceModel: buildWorkspaceModel,
+    matchDesktopEntry: matchDesktopEntry,
+    memberWebIdentity: memberWebIdentity,
     normalizeCorner: normalizeCorner,
     parseDuration: parseDuration
   }

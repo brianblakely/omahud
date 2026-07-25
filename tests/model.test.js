@@ -1,6 +1,8 @@
 const assert = require("node:assert/strict")
 const {
   buildWorkspaceModel,
+  matchDesktopEntry,
+  memberWebIdentity,
   normalizeCorner,
   parseDuration
 } = require("../HudModel.js")
@@ -297,6 +299,123 @@ test("uses class then initial class as deterministic icon candidates", () => {
   assert.deepEqual(members["0xthree"].iconCandidates, ["org.example.Three"])
 })
 
+test("matches native desktop entries by id, startup class, and executable variants", () => {
+  const entries = [
+    {
+      id: "foot.desktop",
+      name: "Foot",
+      startupClass: "foot",
+      execString: "foot",
+      icon: "foot"
+    },
+    {
+      id: "steam.desktop",
+      name: "Steam",
+      startupClass: "",
+      execString: "/usr/bin/steam %U",
+      icon: "steam"
+    },
+    {
+      id: "virtualbox.desktop",
+      name: "Oracle VirtualBox",
+      startupClass: "VirtualBox Manager",
+      execString: "VirtualBox %U",
+      icon: "virtualbox"
+    }
+  ]
+
+  assert.equal(matchDesktopEntry({
+    className: "foot",
+    iconCandidates: ["foot"]
+  }, entries), entries[0])
+  assert.equal(matchDesktopEntry({
+    className: "steam",
+    iconCandidates: ["steam"]
+  }, entries), entries[1])
+  assert.equal(matchDesktopEntry({
+    className: "VirtualBoxVM",
+    iconCandidates: ["VirtualBoxVM"]
+  }, entries), entries[2])
+})
+
+test("matches Omarchy web-app windows to desktop-entry URLs", () => {
+  const entries = [
+    {
+      id: "ChatGPT.desktop",
+      name: "ChatGPT",
+      execString: "omarchy-launch-webapp https://chatgpt.com/",
+      icon: "/icons/ChatGPT.png"
+    },
+    {
+      id: "GitHub.desktop",
+      name: "GitHub",
+      execString: "omarchy-launch-webapp https://github.com/",
+      icon: "/icons/GitHub.png"
+    },
+    {
+      id: "Slack Loadup.desktop",
+      name: "Slack Loadup",
+      execString: "omarchy-launch-webapp https://app.slack.com/client/T0BD9A3HVQF",
+      icon: "/icons/Slack.png"
+    },
+    {
+      id: "Linear Loadup.desktop",
+      name: "Linear Loadup",
+      execString: "omarchy-launch-webapp https://linear.app/loadup-solutions",
+      icon: "/icons/Linear.png"
+    }
+  ]
+
+  assert.equal(matchDesktopEntry({
+    initialTitle: "chatgpt.com_/",
+    className: "chrome-chatgpt.com__-Default"
+  }, entries), entries[0])
+  assert.equal(matchDesktopEntry({
+    className: "chrome-github.com__-Default"
+  }, entries), entries[1])
+  assert.equal(matchDesktopEntry({
+    initialTitle: "app.slack.com_/client/T0BD9A3HVQF",
+    className: "chrome-app.slack.com__client_T0BD9A3HVQF-Default"
+  }, entries), entries[2])
+  assert.equal(matchDesktopEntry({
+    initialTitle: "linear.app_/loadup-solutions",
+    className: "chrome-linear.app__loadup-solutions-Default"
+  }, entries), entries[3])
+})
+
+test("uses a web-app host label when a handler desktop entry has no URL", () => {
+  const hey = {
+    id: "HEY.desktop",
+    name: "HEY",
+    execString: "omarchy-webapp-handler-hey %u",
+    icon: "/icons/HEY.png"
+  }
+  const member = {
+    initialTitle: "app.hey.com_/topics",
+    className: "chrome-app.hey.com__topics-Default"
+  }
+
+  assert.deepEqual(memberWebIdentity(member), {
+    host: "app.hey.com",
+    path: "/topics"
+  })
+  assert.equal(matchDesktopEntry(member, [hey]), hey)
+})
+
+test("returns no desktop entry for an unknown application", () => {
+  assert.equal(matchDesktopEntry({
+    className: "org.example.Unknown",
+    initialClass: "org.example.Unknown",
+    iconCandidates: ["org.example.Unknown"]
+  }, [{
+    id: "foot.desktop",
+    name: "Foot",
+    startupClass: "foot",
+    execString: "foot",
+    icon: "foot"
+  }]), null)
+})
+
 test("handles malformed snapshots without throwing or returning invalid geometry", () => {
   assert.deepEqual(buildWorkspaceModel(null, null), {
     targetMonitorName: "",
@@ -337,6 +456,7 @@ test("handles malformed snapshots without throwing or returning invalid geometry
   assert.equal(result.workspaces.length, 1)
   assert.equal(result.workspaces[0].aspectRatio, 16 / 9)
   assert.deepEqual(result.workspaces[0].windows[0].members[0].iconCandidates, [])
+  assert.equal(result.workspaces[0].windows[0].members[0].initialTitle, "")
 
   const window = result.workspaces[0].windows[0]
   for (const value of [window.x, window.y, window.width, window.height]) {
