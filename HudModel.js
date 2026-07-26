@@ -2,7 +2,6 @@ var DEFAULT_CORNER = "bottom-left"
 var DEFAULT_DURATION = 2000
 var MIN_DURATION = 250
 var MAX_DURATION = 10000
-var DEFAULT_BORDER_WIDTH = 2
 var FALLBACK_ASPECT_RATIO = 16 / 9
 var COINCIDENT_EPSILON = 0.0001
 
@@ -127,17 +126,6 @@ function parseDuration(value) {
   }
 
   return Math.round(parsed)
-}
-
-function parseBorderWidth(borderSizeOption) {
-  var rawWidth = borderSizeOption && typeof borderSizeOption === "object"
-    ? borderSizeOption.int
-    : borderSizeOption
-  var width = rawWidth === undefined || rawWidth === null || String(rawWidth).trim() === ""
-    ? NaN
-    : Number(rawWidth)
-  if (!isFinite(width) || width < 0) width = DEFAULT_BORDER_WIDTH
-  return Math.round(width)
 }
 
 function normalizedTransform(value) {
@@ -920,7 +908,6 @@ if (typeof module !== "undefined") {
     matchDesktopEntry: matchDesktopEntry,
     memberWebIdentity: memberWebIdentity,
     normalizeCorner: normalizeCorner,
-    parseBorderWidth: parseBorderWidth,
     parseDuration: parseDuration,
     workspaceLabel: workspaceLabel
   }

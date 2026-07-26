@@ -52,6 +52,20 @@ Item {
   readonly property int gridWidth: gridColumns * tileWidth + Math.max(0, gridColumns - 1) * gridGap
   readonly property int gridHeight: gridRows * tileHeight + Math.max(0, gridRows - 1) * gridGap
   readonly property string iconFontFamily: "JetBrainsMono Nerd Font"
+  readonly property string defaultHudBorderColor: "rgba(595959aa)"
+  readonly property color hudBorderColor: Color.flatColor(
+    hudBorderColorValue,
+    Qt.rgba(0x59 / 255, 0x59 / 255, 0x59 / 255, 0xaa / 255)
+  )
+  readonly property var hudBorderSpec: ({
+    color: hudBorderColor,
+    widths: Border.surfaceWidths(
+      "popups",
+      "border",
+      Math.max(1, Style.space(2))
+    ),
+    gradient: { colors: [], angle: 0, enabled: false }
+  })
 
   property var hudModel: ({
     targetMonitorName: "",
@@ -66,7 +80,8 @@ Item {
   property int snapshotExitCode: -1
   property string snapshotOutput: ""
   property var desktopEntries: []
-  property int hudBorderWidth: HudModel.parseBorderWidth(null)
+  property string hudBorderColorValue: defaultHudBorderColor
+  property bool borderColorRefreshQueued: false
   property string lastError: ""
   property string state: "idle"
 
@@ -199,6 +214,16 @@ Item {
     return Qt.rgba(tint.r, tint.g, tint.b, tint.a)
   }
 
+  function refreshHudBorderColor() {
+    if (borderColorProcess.running) {
+      borderColorRefreshQueued = true
+      return
+    }
+
+    borderColorRefreshQueued = false
+    borderColorProcess.running = true
+  }
+
   function requestShow() {
     showRequested = true
     hideTimer.stop()
@@ -269,8 +294,6 @@ Item {
       return
     }
 
-    hudBorderWidth = HudModel.parseBorderWidth(parsed.borderSize)
-
     var next = HudModel.buildWorkspaceModel(parsed.monitors, parsed.clients)
     if (!next || !next.targetMonitorName || !Array.isArray(next.workspaces)) {
       failSnapshot("no numbered workspaces to display")
@@ -333,7 +356,7 @@ Item {
     command: [
       "bash",
       "-c",
-      "printf '{\"monitors\":'; hyprctl monitors -j 2>/dev/null || exit 1; printf ',\"clients\":'; hyprctl clients -j 2>/dev/null || exit 1; printf ',\"borderSize\":'; if omahud_border_size_json=\"$(hyprctl -j getoption general:border_size 2>/dev/null)\"; then printf '%s' \"$omahud_border_size_json\"; else printf '{}'; fi; printf '}'"
+      "printf '{\"monitors\":'; hyprctl monitors -j 2>/dev/null || exit 1; printf ',\"clients\":'; hyprctl clients -j 2>/dev/null || exit 1; printf '}'"
     ]
 
     stdout: StdioCollector {
@@ -357,6 +380,29 @@ Item {
     }
   }
 
+  Process {
+    id: borderColorProcess
+    command: [
+      root.omarchyPath + "/bin/omarchy-theme-color",
+      "hyprland_inactive_border",
+      root.defaultHudBorderColor
+    ]
+
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var value = String(text || "").trim()
+        root.hudBorderColorValue = value || root.defaultHudBorderColor
+      }
+    }
+
+    onExited: {
+      if (!root.borderColorRefreshQueued) return
+      root.borderColorRefreshQueued = false
+      Qt.callLater(root.refreshHudBorderColor)
+    }
+  }
+
   Connections {
     target: Hyprland
 
@@ -371,8 +417,14 @@ Item {
     function onValuesChanged() { root.refreshDesktopEntries() }
   }
 
+  Connections {
+    target: Color
+    function onShellValuesChanged() { root.refreshHudBorderColor() }
+  }
+
   Component.onCompleted: {
     root.refreshDesktopEntries()
+    root.refreshHudBorderColor()
     root.requestSnapshot()
   }
 
@@ -443,7 +495,7 @@ Item {
         anchors.topMargin: panel.topClearance
         anchors.bottomMargin: panel.bottomClearance
         color: Util.alpha(Color.background, 0.94)
-        borderSpec: Border.flat(Color.muted, root.hudBorderWidth)
+        borderSpec: root.hudBorderSpec
         radius: 0
 
         Grid {

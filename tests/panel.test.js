@@ -45,20 +45,25 @@ test("dismisses instead of displaying an empty snapshot", () => {
   )
 })
 
-test("uses the live global border width with the theme muted color", () => {
-  assert.match(
-    panel,
-    /hyprctl -j getoption general:border_size/
-  )
+test("uses the theme inactive border color and the Shell panel border width", () => {
+  assert.doesNotMatch(panel, /hyprctl -j getoption general:border_size/)
   assert.doesNotMatch(panel, /general:col\.inactive_border/)
+  assert.doesNotMatch(panel, /HudModel\.parseBorderWidth/)
+  assert.match(panel, /defaultHudBorderColor:\s*"rgba\(595959aa\)"/)
   assert.match(
     panel,
-    /hudBorderWidth\s*=\s*HudModel\.parseBorderWidth\(parsed\.borderSize\)/
+    /command:\s*\[\s*root\.omarchyPath \+ "\/bin\/omarchy-theme-color",\s*"hyprland_inactive_border",\s*root\.defaultHudBorderColor\s*\]/
   )
   assert.match(
     panel,
-    /borderSpec:\s*Border\.flat\(Color\.muted,\s*root\.hudBorderWidth\)/
+    /function onShellValuesChanged\(\)\s*\{\s*root\.refreshHudBorderColor\(\)\s*\}/
   )
+  assert.match(
+    panel,
+    /widths:\s*Border\.surfaceWidths\(\s*"popups",\s*"border",\s*Math\.max\(1,\s*Style\.space\(2\)\)\s*\)/
+  )
+  assert.match(panel, /borderSpec:\s*root\.hudBorderSpec/)
+  assert.doesNotMatch(panel, /borderSpec:\s*Border\.flat\(Color\.muted/)
   assert.doesNotMatch(
     panel,
     /id:\s*card[\s\S]*?borderSpec:\s*Border\.surfaceSpec\(\s*"popups"/

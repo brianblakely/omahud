@@ -7,7 +7,6 @@ const {
   matchDesktopEntry,
   memberWebIdentity,
   normalizeCorner,
-  parseBorderWidth,
   parseDuration,
   workspaceLabel
 } = require("../HudModel.js")
@@ -78,16 +77,6 @@ test("accepts bounded durations and defaults invalid values", () => {
   assert.equal(parseDuration("500ms"), 2000)
   assert.equal(parseDuration(""), 2000)
   assert.equal(parseDuration(null), 2000)
-})
-
-test("parses the live global Hyprland border width", () => {
-  assert.equal(parseBorderWidth({ option: "general:border_size", int: 3 }), 3)
-  assert.equal(parseBorderWidth({ int: 0 }), 0)
-  assert.equal(parseBorderWidth(4.6), 5)
-  assert.equal(parseBorderWidth(null), 2)
-  assert.equal(parseBorderWidth({}), 2)
-  assert.equal(parseBorderWidth({ int: "invalid" }), 2)
-  assert.equal(parseBorderWidth({ int: -1 }), 2)
 })
 
 test("formats workspace ten as zero without changing workspace identity", () => {
