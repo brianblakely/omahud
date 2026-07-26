@@ -42,7 +42,15 @@ test("removes workspace and number-badge outlines and places the badge flush", (
   assert.match(panel, /id:\s*numberBadge\b[^{}]*border\.width:\s*0/)
 })
 
-test("uses workspace colors for the badge and formats its label through the model", () => {
+test("uses opaque workspace colors and leaves window geometries unfilled", () => {
+  assert.match(
+    panel,
+    /workspaceBackground:\s*workspace\.active\s*\?\s*Color\.foreground\s*:\s*Color\.background/
+  )
+  assert.match(panel, /id:\s*windowFrame\b[\s\S]*?color:\s*"transparent"/)
+})
+
+test("uses opaque workspace colors for the badge and formats its label through the model", () => {
   assert.match(
     panel,
     /id:\s*numberBadge\b[^{}]*color:\s*workspaceTile\.workspaceBackground/
@@ -50,6 +58,14 @@ test("uses workspace colors for the badge and formats its label through the mode
   assert.match(
     panel,
     /id:\s*numberLabel\b[^{}]*text:\s*HudModel\.workspaceLabel\(workspaceTile\.workspace\.id\)[^{}]*color:\s*workspaceTile\.workspaceForeground/
+  )
+})
+
+test("renders application icons with the workspace foreground color", () => {
+  assert.match(panel, /import QtQuick\.Effects/)
+  assert.match(
+    panel,
+    /source:\s*root\.iconSource\(modelData\)[^{}]*layer\.enabled:\s*true[^{}]*layer\.effect:\s*MultiEffect\s*\{[^{}]*colorization:\s*1\.0[^{}]*colorizationColor:\s*workspaceTile\.workspaceForeground/
   )
 })
 

@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
@@ -444,7 +445,7 @@ Item {
               readonly property var workspace: modelData
               readonly property color workspaceBackground: workspace.active
                 ? Color.foreground
-                : Util.alpha(Color.popups.text, 0.035)
+                : Color.background
               readonly property color workspaceForeground: workspace.active
                 ? Color.background
                 : Color.popups.text
@@ -487,10 +488,7 @@ Item {
                       y: Math.round((Number(windowData.y) || 0) * layoutFrame.height)
                       width: Math.max(Style.space(4), Math.round(rawWidth * layoutFrame.width))
                       height: Math.max(Style.space(4), Math.round(rawHeight * layoutFrame.height))
-                      color: Util.alpha(
-                        workspaceTile.workspaceForeground,
-                        windowData.fullscreen ? 0.19 : (windowData.floating ? 0.16 : 0.11)
-                      )
+                      color: "transparent"
                       border.color: windowData.floating
                         ? Util.alpha(
                           workspaceTile.workspace.active ? Color.background : Color.accent,
@@ -526,6 +524,11 @@ Item {
                             asynchronous: true
                             mipmap: true
                             source: root.iconSource(modelData)
+                            layer.enabled: true
+                            layer.effect: MultiEffect {
+                              colorization: 1.0
+                              colorizationColor: workspaceTile.workspaceForeground
+                            }
                           }
                         }
                       }
