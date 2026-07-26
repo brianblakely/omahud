@@ -19,7 +19,7 @@ Item {
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "b.omahud"
   readonly property var pluginSettings: currentSettings()
   readonly property string selectedCorner: HudModel.normalizeCorner(setting("corner", "bottom-left"))
-  readonly property int displayDuration: HudModel.parseDuration(setting("durationMs", 1500))
+  readonly property int displayDuration: HudModel.parseDuration(setting("durationMs", 2000))
   readonly property int focusedWorkspaceId: Hyprland.focusedWorkspace
     ? Number(Hyprland.focusedWorkspace.id) || 0
     : 0
@@ -66,6 +66,7 @@ Item {
   property int snapshotExitCode: -1
   property string snapshotOutput: ""
   property var desktopEntries: []
+  property int hudBorderWidth: HudModel.parseBorderWidth(null)
   property string lastError: ""
   property string state: "idle"
 
@@ -245,10 +246,13 @@ Item {
     var rerun = snapshotQueued
     snapshotQueued = false
 
+    if (rerun) {
+      Qt.callLater(beginSnapshot)
+      return
+    }
+
     if (snapshotExitCode === 0) applySnapshot(snapshotOutput)
     else failSnapshot(lastError || "hyprctl workspace snapshot failed")
-
-    if (rerun) Qt.callLater(beginSnapshot)
   }
 
   function applySnapshot(raw) {
@@ -265,14 +269,20 @@ Item {
       return
     }
 
+    hudBorderWidth = HudModel.parseBorderWidth(parsed.borderSize)
+
     var next = HudModel.buildWorkspaceModel(parsed.monitors, parsed.clients)
-    if (!next || !next.targetMonitorName || !Array.isArray(next.workspaces)
-        || next.workspaces.length === 0) {
+    if (!next || !next.targetMonitorName || !Array.isArray(next.workspaces)) {
       failSnapshot("no numbered workspaces to display")
       return
     }
 
     hudModel = next
+    if (next.workspaces.length === 0) {
+      close()
+      return
+    }
+
     if (showRequested) {
       if (!opened) showCachedModel()
       else state = "visible"
@@ -323,7 +333,7 @@ Item {
     command: [
       "bash",
       "-c",
-      "printf '{\"monitors\":'; hyprctl monitors -j 2>/dev/null || exit 1; printf ',\"clients\":'; hyprctl clients -j 2>/dev/null || exit 1; printf '}'"
+      "printf '{\"monitors\":'; hyprctl monitors -j 2>/dev/null || exit 1; printf ',\"clients\":'; hyprctl clients -j 2>/dev/null || exit 1; printf ',\"borderSize\":'; if omahud_border_size_json=\"$(hyprctl -j getoption general:border_size 2>/dev/null)\"; then printf '%s' \"$omahud_border_size_json\"; else printf '{}'; fi; printf '}'"
     ]
 
     stdout: StdioCollector {
@@ -433,12 +443,7 @@ Item {
         anchors.topMargin: panel.topClearance
         anchors.bottomMargin: panel.bottomClearance
         color: Util.alpha(Color.background, 0.94)
-        borderSpec: Border.surfaceSpec(
-          "popups",
-          "border",
-          Color.popups.border,
-          Math.max(1, Style.space(1))
-        )
+        borderSpec: Border.flat(Color.muted, root.hudBorderWidth)
         radius: 0
 
         Grid {

@@ -31,6 +31,47 @@ test("shows cached state on workspace events before refreshing geometry", () => 
   assert.doesNotMatch(panel, /snapshotDebounce|onFocusedWorkspaceChanged/)
 })
 
+test("discards superseded snapshots before they can cancel a newer show", () => {
+  assert.match(
+    panel,
+    /var rerun\s*=\s*snapshotQueued[\s\S]*?snapshotQueued\s*=\s*false[\s\S]*?if\s*\(rerun\)\s*\{\s*Qt\.callLater\(beginSnapshot\)\s*return\s*\}[\s\S]*?if\s*\(snapshotExitCode\s*===\s*0\)\s*applySnapshot\(snapshotOutput\)/
+  )
+})
+
+test("dismisses instead of displaying an empty snapshot", () => {
+  assert.match(
+    panel,
+    /hudModel\s*=\s*next\s*\n\s*if\s*\(next\.workspaces\.length\s*===\s*0\)\s*\{\s*close\(\)\s*return/
+  )
+})
+
+test("uses the live global border width with the theme muted color", () => {
+  assert.match(
+    panel,
+    /hyprctl -j getoption general:border_size/
+  )
+  assert.doesNotMatch(panel, /general:col\.inactive_border/)
+  assert.match(
+    panel,
+    /hudBorderWidth\s*=\s*HudModel\.parseBorderWidth\(parsed\.borderSize\)/
+  )
+  assert.match(
+    panel,
+    /borderSpec:\s*Border\.flat\(Color\.muted,\s*root\.hudBorderWidth\)/
+  )
+  assert.doesNotMatch(
+    panel,
+    /id:\s*card[\s\S]*?borderSpec:\s*Border\.surfaceSpec\(\s*"popups"/
+  )
+})
+
+test("uses a 2000 millisecond default duration", () => {
+  assert.match(
+    panel,
+    /displayDuration:\s*HudModel\.parseDuration\(setting\("durationMs",\s*2000\)\)/
+  )
+})
+
 test("shows and dismisses immediately without mapping or opacity transitions", () => {
   assert.match(panel, /onTriggered:\s*root\.close\(\)/)
   assert.match(

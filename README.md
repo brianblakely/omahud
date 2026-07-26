@@ -40,10 +40,10 @@ omarchy-shell b.omahud corner top-right
 Set how long OmaHUD remains visible, in milliseconds:
 
 ```bash
-omarchy-shell b.omahud duration 1500
+omarchy-shell b.omahud duration 2000
 ```
 
-The default is `1500`; accepted values range from `250` to `10000`.
+The default is `2000`; accepted values range from `250` to `10000`.
 
 ## Optional shortcut
 
