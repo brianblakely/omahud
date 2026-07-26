@@ -796,9 +796,29 @@ function activateWorkspace(model, workspaceId, monitorName) {
   var targetMonitorName = nonEmptyString(monitorName)
     || nonEmptyString(model.targetMonitorName)
   var source = Array.isArray(model.workspaces) ? model.workspaces : []
+  var fallbackAspectRatio = FALLBACK_ASPECT_RATIO
+  var fallbackAspectFound = false
   var workspaces = []
+  var activeFound = false
+  var i
 
-  for (var i = 0; i < source.length; i++) {
+  for (i = 0; i < source.length; i++) {
+    var aspectWorkspace = source[i]
+    if (!aspectWorkspace || typeof aspectWorkspace !== "object") continue
+
+    var candidateAspectRatio = finiteNumber(aspectWorkspace.aspectRatio, 0)
+    if (candidateAspectRatio <= 0) continue
+    if (!fallbackAspectFound) {
+      fallbackAspectRatio = candidateAspectRatio
+      fallbackAspectFound = true
+    }
+    if (nonEmptyString(aspectWorkspace.monitorName) === targetMonitorName) {
+      fallbackAspectRatio = candidateAspectRatio
+      break
+    }
+  }
+
+  for (i = 0; i < source.length; i++) {
     var workspace = source[i]
     if (!workspace || typeof workspace !== "object") continue
 
@@ -806,22 +826,36 @@ function activateWorkspace(model, workspaceId, monitorName) {
     if (id === 0) continue
 
     var windows = Array.isArray(workspace.windows) ? workspace.windows : []
-    if (windows.length === 0) continue
-
     var active = activeWorkspaceId > 0 && id === activeWorkspaceId
+    var workspaceMonitorName = nonEmptyString(workspace.monitorName)
+    var aspectRatio = Math.max(
+      0.1,
+      finiteNumber(workspace.aspectRatio, FALLBACK_ASPECT_RATIO)
+    )
+
+    if (windows.length === 0 && !active) continue
+    if (active) activeFound = true
 
     workspaces.push({
       id: id,
       monitorName: active && targetMonitorName
         ? targetMonitorName
-        : nonEmptyString(workspace.monitorName),
+        : workspaceMonitorName,
       active: active,
       empty: windows.length === 0,
-      aspectRatio: Math.max(
-        0.1,
-        finiteNumber(workspace.aspectRatio, FALLBACK_ASPECT_RATIO)
-      ),
+      aspectRatio: aspectRatio,
       windows: windows
+    })
+  }
+
+  if (activeWorkspaceId > 0 && !activeFound) {
+    workspaces.push({
+      id: activeWorkspaceId,
+      monitorName: targetMonitorName,
+      active: true,
+      empty: true,
+      aspectRatio: fallbackAspectRatio,
+      windows: []
     })
   }
 
@@ -863,6 +897,14 @@ function buildWorkspaceModel(monitors, clients) {
         }
       }
       buckets[key].entries.push(clientEntry(client, workspaceId, monitor, i))
+    }
+  }
+
+  if (activeWorkspaceId > 0 && !buckets[String(activeWorkspaceId)]) {
+    buckets[String(activeWorkspaceId)] = {
+      id: activeWorkspaceId,
+      monitor: targetMonitor,
+      entries: []
     }
   }
 

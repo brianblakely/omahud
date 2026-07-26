@@ -125,7 +125,7 @@ test("reactively activates a cached workspace without mutating the snapshot", ()
   assert.equal(snapshot.workspaces[1].active, false)
 })
 
-test("omits empty workspaces before activating cached state", () => {
+test("removes a cached empty workspace once it is no longer active", () => {
   const snapshot = {
     targetMonitorName: "DP-1",
     activeWorkspaceId: 2,
@@ -151,23 +151,31 @@ test("omits empty workspaces before activating cached state", () => {
 
   const activated = activateWorkspace(snapshot, 7, "HDMI-A-1")
 
-  assert.deepEqual(activated.workspaces.map(workspace => workspace.id), [10])
-  assert.deepEqual(activated.workspaces.filter(workspace => workspace.active), [])
+  assert.deepEqual(activated.workspaces.map(workspace => workspace.id), [7, 10])
+  assert.deepEqual(
+    activated.workspaces.map(workspace => [
+      workspace.id,
+      workspace.active,
+      workspace.empty
+    ]),
+    [[7, true, true], [10, false, false]]
+  )
+  assert.equal(activated.workspaces[0].monitorName, "HDMI-A-1")
   assert.equal(snapshot.workspaces.length, 2)
   assert.equal(snapshot.workspaces[1].empty, true)
 })
 
-test("removes a cached empty workspace before showing the next workspace", () => {
+test("keeps only the active empty workspace in cached state", () => {
   const snapshot = {
     targetMonitorName: "DP-1",
     activeWorkspaceId: 7,
     workspaces: [
       {
         id: 2,
-        monitorName: "DP-1",
+        monitorName: "eDP-1",
         active: false,
         empty: false,
-        aspectRatio: 16 / 9,
+        aspectRatio: 16 / 10,
         windows: [{}]
       },
       {
@@ -175,23 +183,60 @@ test("removes a cached empty workspace before showing the next workspace", () =>
         monitorName: "DP-1",
         active: true,
         empty: true,
+        aspectRatio: 4 / 3,
+        windows: []
+      }
+    ]
+  }
+
+  const populated = activateWorkspace(snapshot, 2, "eDP-1")
+  const anotherEmpty = activateWorkspace(snapshot, 9, "DP-1")
+  const sameEmpty = activateWorkspace(snapshot, 7, "DP-1")
+
+  assert.deepEqual(populated.workspaces.map(workspace => workspace.id), [2])
+  assert.equal(populated.workspaces[0].active, true)
+  assert.deepEqual(anotherEmpty.workspaces.map(workspace => workspace.id), [2, 9])
+  assert.equal(anotherEmpty.workspaces[1].active, true)
+  assert.equal(anotherEmpty.workspaces[1].empty, true)
+  assert.equal(anotherEmpty.workspaces[1].monitorName, "DP-1")
+  assert.equal(anotherEmpty.workspaces[1].aspectRatio, 4 / 3)
+  assert.deepEqual(anotherEmpty.workspaces[1].windows, [])
+  assert.deepEqual(sameEmpty.workspaces.map(workspace => workspace.id), [2, 7])
+  assert.equal(sameEmpty.workspaces[1].active, true)
+  assert.equal(sameEmpty.workspaces[1].empty, true)
+  assert.equal(snapshot.workspaces[1].active, true)
+  assert.deepEqual(snapshot.workspaces[1].windows, [])
+})
+
+test("does not synthesize an empty workspace without a positive active id", () => {
+  const snapshot = {
+    targetMonitorName: "DP-1",
+    activeWorkspaceId: 2,
+    workspaces: [
+      {
+        id: 2,
+        monitorName: "DP-1",
+        active: true,
+        empty: false,
+        aspectRatio: 16 / 9,
+        windows: [{}]
+      },
+      {
+        id: 7,
+        monitorName: "DP-1",
+        active: false,
+        empty: true,
         aspectRatio: 16 / 9,
         windows: []
       }
     ]
   }
 
-  const populated = activateWorkspace(snapshot, 2, "DP-1")
-  const anotherEmpty = activateWorkspace(snapshot, 9, "DP-1")
-  const sameEmpty = activateWorkspace(snapshot, 7, "DP-1")
-
-  assert.deepEqual(populated.workspaces.map(workspace => workspace.id), [2])
-  assert.equal(populated.workspaces[0].active, true)
-  assert.deepEqual(anotherEmpty.workspaces.map(workspace => workspace.id), [2])
-  assert.deepEqual(anotherEmpty.workspaces.filter(workspace => workspace.active), [])
-  assert.deepEqual(sameEmpty.workspaces.map(workspace => workspace.id), [2])
-  assert.equal(snapshot.workspaces[1].active, true)
-  assert.deepEqual(snapshot.workspaces[1].windows, [])
+  for (const activeId of [0, -1, "special"]) {
+    const result = activateWorkspace(snapshot, activeId, "DP-1")
+    assert.deepEqual(result.workspaces.map(workspace => workspace.id), [2])
+    assert.deepEqual(result.workspaces.filter(workspace => workspace.active), [])
+  }
 })
 
 test("filters non-mapped and non-numbered clients and sorts workspace ids", () => {
@@ -214,15 +259,20 @@ test("filters non-mapped and non-numbered clients and sorts workspace ids", () =
   assert.equal(result.workspaces[0].active, true)
 })
 
-test("does not add the active workspace when it is empty", () => {
+test("adds the active workspace when it is empty", () => {
   const result = buildWorkspaceModel(
     [monitor({ activeWorkspace: { id: 7, name: "7" } })],
     [client({ workspace: { id: 2, name: "2" } })]
   )
 
-  assert.deepEqual(result.workspaces.map(workspace => workspace.id), [2])
+  assert.deepEqual(result.workspaces.map(workspace => workspace.id), [2, 7])
   assert.equal(result.workspaces[0].active, false)
   assert.equal(result.workspaces[0].empty, false)
+  assert.equal(result.workspaces[1].active, true)
+  assert.equal(result.workspaces[1].empty, true)
+  assert.deepEqual(result.workspaces[1].windows, [])
+  assert.equal(result.workspaces[1].monitorName, "DP-1")
+  assert.equal(result.workspaces[1].aspectRatio, 1)
 })
 
 test("normalizes scaled, offset, rotated, and clipped monitor geometry", () => {

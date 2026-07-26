@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "b.omahud",
   "name": "OmaHUD",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "author": "Brian Blakely",
   "description": "Briefly show workspace layouts and application icons when switching workspaces",
   "kinds": [
