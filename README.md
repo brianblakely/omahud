@@ -1,34 +1,16 @@
 # OmaHUD
 
-OmaHUD briefly displays a compact diagram of your populated Hyprland workspaces when you switch workspaces. Each workspace shows its number, window layout, and application icons. The diagram appears in the lower-left corner by default.
+Flashes a discreet Hyprland workspace indicator when you switch workspaces. It's designed for people who hide their Omarchy bar most of the time, and would like help navigating their workspaces.
 
 ## Install
-
-Review the source at [github.com/brianblakely/omahud](https://github.com/brianblakely/omahud), then add the plugin:
 
 ```bash
 omarchy plugin add https://github.com/brianblakely/omahud.git
 ```
 
-Accept the prompt to enable OmaHUD during installation.
-
-## Show OmaHUD
-
-Display OmaHUD on demand:
-
-```bash
-omarchy-shell shell summon b.omahud
-```
-
-Hide it immediately:
-
-```bash
-omarchy-shell shell hide b.omahud
-```
-
 ## Configuration
 
-Choose any screen corner:
+Choose where OmaHUD is positioned:
 
 ```bash
 omarchy-shell b.omahud corner bottom-left
@@ -45,9 +27,7 @@ omarchy-shell b.omahud duration 2000
 
 The default is `2000`; accepted values range from `250` to `10000`.
 
-## Optional shortcut
-
-Global keybindings remain user-owned. Add this to your Hyprland bindings if desired:
+## Shortcut
 
 ```lua
 o.bind("SUPER + ALT + H", "Show OmaHUD", "omarchy-shell shell summon b.omahud")
