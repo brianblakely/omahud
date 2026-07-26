@@ -31,9 +31,32 @@ test("shows cached state on workspace events before refreshing geometry", () => 
   assert.doesNotMatch(panel, /snapshotDebounce|onFocusedWorkspaceChanged/)
 })
 
-test("dismisses immediately without an opacity animation or close delay", () => {
+test("shows and dismisses immediately without mapping or opacity transitions", () => {
   assert.match(panel, /onTriggered:\s*root\.close\(\)/)
-  assert.doesNotMatch(panel, /hudOpacity|closeTimer|Behavior on opacity|state = "fading"/)
+  assert.match(
+    panel,
+    /PanelWindow\s*\{[\s\S]*?\bscreen:\s*modelData\s*\n\s*visible:\s*true/
+  )
+  assert.match(
+    panel,
+    /\bvisible:\s*true[\s\S]*?\bcolor:\s*"transparent"[\s\S]*?\bexclusionMode:\s*ExclusionMode\.Ignore[\s\S]*?WlrLayershell\.keyboardFocus:\s*WlrKeyboardFocus\.None[\s\S]*?\bmask:\s*Region\s*\{\s*\}/
+  )
+  assert.match(
+    panel,
+    /BorderSurface\s*\{\s*id:\s*card\s*\n\s*visible:\s*root\.opened\s*&&\s*panel\.targetScreen/
+  )
+  assert.match(
+    panel,
+    /function showCachedModel\(\)\s*\{[\s\S]*?\bopened\s*=\s*true/
+  )
+  assert.match(
+    panel,
+    /function close\(\)\s*\{[\s\S]*?\bopened\s*=\s*false/
+  )
+  assert.doesNotMatch(
+    panel,
+    /hudOpacity|closeTimer|Behavior|Animation|Transition|state = "fading"|\bopacity\s*:/
+  )
 })
 
 test("removes workspace and number-badge outlines and places the badge flush", () => {

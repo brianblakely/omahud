@@ -404,7 +404,7 @@ Item {
         : Style.gapsOut
 
       screen: modelData
-      visible: root.opened && targetScreen
+      visible: true
       anchors {
         top: true
         bottom: true
@@ -421,6 +421,7 @@ Item {
       BorderSurface {
         id: card
 
+        visible: root.opened && panel.targetScreen
         width: borderLeft + root.cardPadding + root.gridWidth + root.cardPadding + borderRight
         height: borderTop + root.cardPadding + root.gridHeight + root.cardPadding + borderBottom
         anchors.left: panel.cornerLeft ? parent.left : undefined
