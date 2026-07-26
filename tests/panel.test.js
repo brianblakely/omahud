@@ -61,11 +61,30 @@ test("uses opaque workspace colors for the badge and formats its label through t
   )
 })
 
-test("renders application icons with the workspace foreground color", () => {
+test("prefers default Nerd Font glyphs and colorizes image fallbacks", () => {
   assert.match(panel, /import QtQuick\.Effects/)
   assert.match(
     panel,
-    /source:\s*root\.iconSource\(modelData\)[^{}]*layer\.enabled:\s*true[^{}]*layer\.effect:\s*MultiEffect\s*\{[^{}]*colorization:\s*1\.0[^{}]*colorizationColor:\s*workspaceTile\.workspaceForeground/
+    /iconFontFamily:\s*"JetBrainsMono Nerd Font"/
+  )
+  assert.match(
+    panel,
+    /glyph:\s*HudModel\.appGlyph\(modelData,\s*entry\)/
+  )
+  assert.match(
+    panel,
+    /OpticalGlyph\s*\{[^{}]*visible:\s*appIcon\.glyph\.length\s*>\s*0[^{}]*text:\s*appIcon\.glyph[^{}]*color:\s*workspaceTile\.workspaceForeground[^{}]*fontFamily:\s*root\.iconFontFamily/
+  )
+  assert.match(
+    panel,
+    /Image\s*\{[^{}]*visible:\s*appIcon\.glyph\.length\s*===\s*0[\s\S]*?layer\.effect:\s*MultiEffect\s*\{[^{}]*colorization:\s*1\.0[^{}]*colorizationColor:\s*workspaceTile\.fallbackIconColor/
+  )
+})
+
+test("uses a contrast-safe image tint instead of near-black on light workspaces", () => {
+  assert.match(
+    panel,
+    /fallbackIconColor:\s*root\.fallbackIconTint\(\s*workspaceForeground,\s*workspaceBackground\s*\)/
   )
 })
 

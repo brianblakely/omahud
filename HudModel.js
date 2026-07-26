@@ -5,6 +5,76 @@ var MAX_DURATION = 10000
 var FALLBACK_ASPECT_RATIO = 16 / 9
 var COINCIDENT_EPSILON = 0.0001
 
+// App glyphs already assigned by Omarchy's default menu and provided by its
+// default JetBrainsMono Nerd Font package. Keep matching exact so a web app
+// class such as "chrome-chatgpt.com__-Default" does not become Chrome.
+var APP_GLYPHS = {
+  "1password": "\udb82\udc81",
+  "alacritty": "\ue795",
+  "app.zen_browser.zen": "\udb81\udd9f",
+  "bitwarden": "\udb81\udff5",
+  "brave": "\udb81\udd9f",
+  "brave-browser": "\udb81\udd9f",
+  "brave-origin": "\udb81\udd9f",
+  "chrome": "\udb80\udeaf",
+  "chromium": "\uf268",
+  "chromium-browser": "\uf268",
+  "code": "\ue8da",
+  "code-oss": "\ue8da",
+  "com.1password.1password": "\udb82\udc81",
+  "com.bitwarden.desktop": "\udb81\udff5",
+  "com.brave.browser": "\udb81\udd9f",
+  "com.google.chrome": "\udb80\udeaf",
+  "com.heroicgameslauncher.hgl": "\udb85\udcdf",
+  "com.microsoft.edge": "\udb80\udde9",
+  "com.mitchellh.ghostty": "\ue795",
+  "com.spotify.client": "\udb81\udcc7",
+  "com.valvesoftware.steam": "\uf1b6",
+  "com.visualstudio.code": "\ue8da",
+  "com.vscodium.codium": "\ue8da",
+  "dropbox": "\ue707",
+  "edge": "\udb80\udde9",
+  "firefox": "\udb80\ude39",
+  "firefox-esr": "\udb80\ude39",
+  "foot": "\ue795",
+  "ghostty": "\ue795",
+  "google-chrome": "\udb80\udeaf",
+  "google-chrome-stable": "\udb80\udeaf",
+  "heroic": "\udb85\udcdf",
+  "heroic games launcher": "\udb85\udcdf",
+  "io.neovim.nvim": "\ue6ae",
+  "kitty": "\ue795",
+  "lutris": "\uef94",
+  "microsoft-edge": "\udb80\udde9",
+  "microsoft-edge-stable": "\udb80\udde9",
+  "minecraft": "\udb80\udf73",
+  "minecraft-launcher": "\udb80\udf73",
+  "net.lutris.lutris": "\uef94",
+  "neovim": "\ue6ae",
+  "nvim": "\ue6ae",
+  "org.codeberg.dnkl.foot": "\ue795",
+  "org.libretro.retroarch": "\udb82\udfc9",
+  "org.mozilla.firefox": "\udb80\ude39",
+  "org.omarchy.nvim": "\ue6ae",
+  "org.signal.signal": "\udb82\udf79",
+  "retroarch": "\udb82\udfc9",
+  "signal": "\udb82\udf79",
+  "signal-desktop": "\udb82\udf79",
+  "spotify": "\udb81\udcc7",
+  "steam": "\uf1b6",
+  "vim": "\ue62b",
+  "visual studio code": "\ue8da",
+  "vscode": "\ue8da",
+  "xbox cloud gaming": "\ued3e",
+  "zen": "\udb81\udd9f",
+  "zen-browser": "\udb81\udd9f"
+}
+
+var ENTRY_ONLY_APP_GLYPHS = {
+  "com.docker.desktop": "\uf21f",
+  "docker": "\uf21f"
+}
+
 function finiteNumber(value, fallback) {
   var parsed = Number(value)
   return isFinite(parsed) ? parsed : fallback
@@ -220,6 +290,91 @@ function memberIdentityCandidates(member) {
     if (candidate.length > 0 && output.indexOf(candidate) === -1) output.push(candidate)
   }
   return output
+}
+
+function normalizedAppIdentity(value) {
+  var identity = lowerString(value)
+  return identity.slice(-8) === ".desktop" ? identity.slice(0, -8) : identity
+}
+
+function iconIdentity(value) {
+  var identity = lowerString(value).split("?")[0]
+  var slash = Math.max(identity.lastIndexOf("/"), identity.lastIndexOf("\\"))
+  if (slash >= 0) identity = identity.slice(slash + 1)
+  return identity.replace(/\.(?:png|svg|xpm)$/i, "")
+}
+
+function appendIdentity(output, value) {
+  var identity = normalizedAppIdentity(value)
+  if (identity && output.indexOf(identity) === -1) output.push(identity)
+}
+
+function entryAppIdentities(entry) {
+  var output = []
+  appendIdentity(output, objectString(entry, "id"))
+  appendIdentity(output, objectString(entry, "startupClass"))
+  appendIdentity(output, objectString(entry, "name"))
+  appendIdentity(output, executableName(objectString(entry, "execString")))
+  appendIdentity(output, iconIdentity(objectString(entry, "icon")))
+  return output
+}
+
+function memberAppIdentities(member) {
+  var input = memberIdentityCandidates(member)
+  var output = []
+  for (var i = 0; i < input.length; i++) appendIdentity(output, input[i])
+  return output
+}
+
+function mappedGlyph(identities, mapping) {
+  for (var i = 0; i < identities.length; i++) {
+    if (Object.prototype.hasOwnProperty.call(mapping, identities[i]))
+      return mapping[identities[i]]
+  }
+  return ""
+}
+
+function appGlyph(member, entry) {
+  var entryIdentities = entryAppIdentities(entry)
+  var glyph = mappedGlyph(entryIdentities, APP_GLYPHS)
+    || mappedGlyph(entryIdentities, ENTRY_ONLY_APP_GLYPHS)
+  if (glyph) return glyph
+  return mappedGlyph(memberAppIdentities(member), APP_GLYPHS)
+}
+
+function colorChannelLuminance(value) {
+  var channel = clamp(finiteNumber(value, 0), 0, 1)
+  return channel <= 0.03928
+    ? channel / 12.92
+    : Math.pow((channel + 0.055) / 1.055, 2.4)
+}
+
+function colorLuminance(color) {
+  color = color && typeof color === "object" ? color : {}
+  return 0.2126 * colorChannelLuminance(color.r)
+    + 0.7152 * colorChannelLuminance(color.g)
+    + 0.0722 * colorChannelLuminance(color.b)
+}
+
+function fallbackIconTint(foreground, surface) {
+  foreground = foreground && typeof foreground === "object" ? foreground : {}
+  surface = surface && typeof surface === "object" ? surface : {}
+  var amount = colorLuminance(foreground) < 0.08 && colorLuminance(surface) > 0.35
+    ? 0.35
+    : 0
+  var foregroundRed = clamp(finiteNumber(foreground.r, 0), 0, 1)
+  var foregroundGreen = clamp(finiteNumber(foreground.g, 0), 0, 1)
+  var foregroundBlue = clamp(finiteNumber(foreground.b, 0), 0, 1)
+  var surfaceRed = clamp(finiteNumber(surface.r, 0), 0, 1)
+  var surfaceGreen = clamp(finiteNumber(surface.g, 0), 0, 1)
+  var surfaceBlue = clamp(finiteNumber(surface.b, 0), 0, 1)
+
+  return {
+    r: foregroundRed + (surfaceRed - foregroundRed) * amount,
+    g: foregroundGreen + (surfaceGreen - foregroundGreen) * amount,
+    b: foregroundBlue + (surfaceBlue - foregroundBlue) * amount,
+    a: 1
+  }
 }
 
 function normalizeWebHost(value) {
@@ -785,7 +940,9 @@ function buildWorkspaceModel(monitors, clients) {
 if (typeof module !== "undefined") {
   module.exports = {
     activateWorkspace: activateWorkspace,
+    appGlyph: appGlyph,
     buildWorkspaceModel: buildWorkspaceModel,
+    fallbackIconTint: fallbackIconTint,
     matchDesktopEntry: matchDesktopEntry,
     memberWebIdentity: memberWebIdentity,
     normalizeCorner: normalizeCorner,

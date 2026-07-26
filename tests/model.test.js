@@ -1,7 +1,9 @@
 const assert = require("node:assert/strict")
 const {
   activateWorkspace,
+  appGlyph,
   buildWorkspaceModel,
+  fallbackIconTint,
   matchDesktopEntry,
   memberWebIdentity,
   normalizeCorner,
@@ -381,6 +383,86 @@ test("uses class then initial class as deterministic icon candidates", () => {
   assert.deepEqual(members["0xone"].iconCandidates, ["org.example.One", "one"])
   assert.deepEqual(members["0xtwo"].iconCandidates, ["same"])
   assert.deepEqual(members["0xthree"].iconCandidates, ["org.example.Three"])
+})
+
+test("uses Omarchy default Nerd Font glyphs only for exact app identities", () => {
+  assert.equal(appGlyph({
+    className: "firefox",
+    initialClass: "firefox",
+    iconCandidates: ["firefox"]
+  }, null), "\udb80\ude39")
+  assert.equal(appGlyph({
+    className: "com.mitchellh.ghostty",
+    iconCandidates: ["com.mitchellh.ghostty"]
+  }, null), "\ue795")
+  assert.equal(appGlyph({
+    className: "unexpected",
+    iconCandidates: ["unexpected"]
+  }, {
+    id: "code.desktop",
+    name: "Visual Studio Code",
+    execString: "code --unity-launch",
+    icon: "visual-studio-code"
+  }), "\ue8da")
+  assert.equal(appGlyph({
+    className: "steam",
+    iconCandidates: ["steam"]
+  }, null), "\uf1b6")
+
+  assert.equal(appGlyph({
+    className: "chrome-chatgpt.com__-Default",
+    iconCandidates: ["chrome-chatgpt.com__-Default"]
+  }, {
+    id: "ChatGPT.desktop",
+    name: "ChatGPT",
+    execString: "omarchy-launch-webapp https://chatgpt.com/",
+    icon: "/icons/ChatGPT.png"
+  }), "")
+  assert.equal(appGlyph({
+    className: "discord",
+    iconCandidates: ["discord"]
+  }, { id: "Discord.desktop", name: "Discord", icon: "discord" }), "")
+  assert.equal(appGlyph({
+    className: "TUI.tile",
+    iconCandidates: ["TUI.tile"]
+  }, null), "")
+  assert.equal(appGlyph({
+    className: "constructor",
+    iconCandidates: ["constructor"]
+  }, null), "")
+  assert.equal(appGlyph({
+    className: "__proto__",
+    iconCandidates: ["__proto__"]
+  }, null), "")
+})
+
+test("lifts near-black fallback tints on light workspace surfaces", () => {
+  const lifted = fallbackIconTint(
+    { r: 0, g: 0, b: 0, a: 1 },
+    { r: 1, g: 1, b: 1, a: 1 }
+  )
+  closeTo(lifted.r, 0.35)
+  closeTo(lifted.g, 0.35)
+  closeTo(lifted.b, 0.35)
+  assert.equal(lifted.a, 1)
+
+  const matteBlack = fallbackIconTint(
+    { r: 0x12 / 255, g: 0x12 / 255, b: 0x12 / 255, a: 1 },
+    { r: 0xbe / 255, g: 0xbe / 255, b: 0xbe / 255, a: 1 }
+  )
+  closeTo(matteBlack.r, 78.2 / 255)
+  closeTo(matteBlack.g, 78.2 / 255)
+  closeTo(matteBlack.b, 78.2 / 255)
+
+  assert.deepEqual(fallbackIconTint(
+    { r: 0.8, g: 0.82, b: 0.85, a: 1 },
+    { r: 0.05, g: 0.06, b: 0.07, a: 1 }
+  ), {
+    r: 0.8,
+    g: 0.82,
+    b: 0.85,
+    a: 1
+  })
 })
 
 test("matches native desktop entries by id, startup class, and executable variants", () => {

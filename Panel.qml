@@ -51,6 +51,7 @@ Item {
   readonly property int gridRows: 1
   readonly property int gridWidth: gridColumns * tileWidth + Math.max(0, gridColumns - 1) * gridGap
   readonly property int gridHeight: gridRows * tileHeight + Math.max(0, gridRows - 1) * gridGap
+  readonly property string iconFontFamily: "JetBrainsMono Nerd Font"
 
   property var hudModel: ({
     targetMonitorName: "",
@@ -144,7 +145,7 @@ Item {
     desktopEntries = next
   }
 
-  function iconSource(member) {
+  function desktopEntry(member) {
     var entry = HudModel.matchDesktopEntry(member, desktopEntries)
     var candidates = member && Array.isArray(member.iconCandidates)
       ? member.iconCandidates
@@ -162,6 +163,15 @@ Item {
         } catch (error) {}
       }
     }
+
+    return entry
+  }
+
+  function iconSource(member, entry) {
+    if (entry === undefined) entry = desktopEntry(member)
+    var candidates = member && Array.isArray(member.iconCandidates)
+      ? member.iconCandidates
+      : []
 
     if (entry && entry.icon) {
       if (shell && shell.appLibrary && typeof shell.appLibrary.iconSource === "function")
@@ -181,6 +191,11 @@ Item {
     if (shell && shell.appLibrary && typeof shell.appLibrary.iconSource === "function")
       return shell.appLibrary.iconSource("application-x-executable")
     return Quickshell.iconPath("application-x-executable", true)
+  }
+
+  function fallbackIconTint(foreground, surface) {
+    var tint = HudModel.fallbackIconTint(foreground, surface)
+    return Qt.rgba(tint.r, tint.g, tint.b, tint.a)
   }
 
   function requestShow() {
@@ -449,6 +464,10 @@ Item {
               readonly property color workspaceForeground: workspace.active
                 ? Color.background
                 : Color.popups.text
+              readonly property color fallbackIconColor: root.fallbackIconTint(
+                workspaceForeground,
+                workspaceBackground
+              )
 
               width: root.tileWidth
               height: root.tileHeight
@@ -513,21 +532,40 @@ Item {
                         Repeater {
                           model: windowFrame.windowData.members || []
 
-                          Image {
+                          Item {
+                            id: appIcon
                             required property var modelData
+                            readonly property var entry: root.desktopEntry(modelData)
+                            readonly property string glyph: HudModel.appGlyph(modelData, entry)
 
                             width: Style.space(14)
                             height: width
-                            fillMode: Image.PreserveAspectFit
-                            sourceSize.width: width * Screen.devicePixelRatio
-                            sourceSize.height: height * Screen.devicePixelRatio
-                            asynchronous: true
-                            mipmap: true
-                            source: root.iconSource(modelData)
-                            layer.enabled: true
-                            layer.effect: MultiEffect {
-                              colorization: 1.0
-                              colorizationColor: workspaceTile.workspaceForeground
+
+                            OpticalGlyph {
+                              anchors.fill: parent
+                              visible: appIcon.glyph.length > 0
+                              text: appIcon.glyph
+                              color: workspaceTile.workspaceForeground
+                              fontFamily: root.iconFontFamily
+                              fontSize: appIcon.height
+                            }
+
+                            Image {
+                              anchors.fill: parent
+                              visible: appIcon.glyph.length === 0
+                              fillMode: Image.PreserveAspectFit
+                              sourceSize.width: width * Screen.devicePixelRatio
+                              sourceSize.height: height * Screen.devicePixelRatio
+                              asynchronous: true
+                              mipmap: true
+                              source: visible
+                                ? root.iconSource(appIcon.modelData, appIcon.entry)
+                                : ""
+                              layer.enabled: visible
+                              layer.effect: MultiEffect {
+                                colorization: 1.0
+                                colorizationColor: workspaceTile.fallbackIconColor
+                              }
                             }
                           }
                         }
