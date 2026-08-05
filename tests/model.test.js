@@ -4,6 +4,8 @@ const {
   appGlyph,
   buildWorkspaceModel,
   fallbackIconTint,
+  integerWindowRect,
+  integerWorkspaceSize,
   matchDesktopEntry,
   memberWebIdentity,
   normalizeCorner,
@@ -85,6 +87,85 @@ test("formats workspace ten as zero without changing workspace identity", () => 
   assert.equal(workspaceLabel(10), "0")
   assert.equal(workspaceLabel(11), "11")
   assert.equal(workspaceLabel("invalid"), "")
+})
+
+test("fits monitor aspects into even integer workspace dimensions", () => {
+  assert.deepEqual(integerWorkspaceSize(16 / 9, 46, 29), { width: 46, height: 26 })
+  assert.deepEqual(integerWorkspaceSize(9 / 16, 46, 29), { width: 16, height: 28 })
+  assert.deepEqual(integerWorkspaceSize(1, 45, 29), { width: 28, height: 28 })
+
+  for (const dimensions of [
+    integerWorkspaceSize(3, 47, 31),
+    integerWorkspaceSize(0, 46, 29),
+    integerWorkspaceSize("invalid", 46, 29)
+  ]) {
+    assert.equal(Number.isInteger(dimensions.width), true)
+    assert.equal(Number.isInteger(dimensions.height), true)
+    assert.equal(dimensions.width % 2, 0)
+    assert.equal(dimensions.height % 2, 0)
+  }
+})
+
+test("projects perfect 2x2 layouts into equal integer rectangles", () => {
+  const workspace = integerWorkspaceSize(16 / 9, 46, 29)
+  const rectangles = [
+    integerWindowRect({ x: 0, y: 0, width: 0.5, height: 0.5 }, workspace.width, workspace.height),
+    integerWindowRect({ x: 0.5, y: 0, width: 0.5, height: 0.5 }, workspace.width, workspace.height),
+    integerWindowRect({ x: 0, y: 0.5, width: 0.5, height: 0.5 }, workspace.width, workspace.height),
+    integerWindowRect({ x: 0.5, y: 0.5, width: 0.5, height: 0.5 }, workspace.width, workspace.height)
+  ]
+
+  assert.deepEqual(rectangles.map(rectangle => [
+    rectangle.x,
+    rectangle.y,
+    rectangle.width,
+    rectangle.height
+  ]), [
+    [0, 0, 23, 13],
+    [23, 0, 23, 13],
+    [0, 13, 23, 13],
+    [23, 13, 23, 13]
+  ])
+  for (const rectangle of rectangles) {
+    for (const value of Object.values(rectangle)) assert.equal(Number.isInteger(value), true)
+  }
+})
+
+test("gives equal halves symmetric integer border-center spans", () => {
+  const workspace = integerWorkspaceSize(16 / 9, 46, 29)
+  const upper = integerWindowRect(
+    { x: 0.5, y: 0, width: 0.5, height: 0.5 },
+    workspace.width,
+    workspace.height
+  )
+  const lower = integerWindowRect(
+    { x: 0.5, y: 0.5, width: 0.5, height: 0.5 },
+    workspace.width,
+    workspace.height
+  )
+  const borderWidth = 2
+  const outerTopCenter = borderWidth / 2
+  const sharedCenter = upper.bottom
+  const outerBottomCenter = lower.bottom - borderWidth / 2
+
+  assert.equal(sharedCenter - outerTopCenter, 12)
+  assert.equal(outerBottomCenter - sharedCenter, 12)
+})
+
+test("clips malformed projected rectangles to whole workspace geometry", () => {
+  assert.deepEqual(integerWindowRect({
+    x: -0.25,
+    y: 0.75,
+    width: 2,
+    height: "invalid"
+  }, 45.9, 29.9), {
+    x: 0,
+    y: 22,
+    width: 45,
+    height: 0,
+    right: 45,
+    bottom: 22
+  })
 })
 
 test("reactively activates a cached workspace without mutating the snapshot", () => {
@@ -365,6 +446,14 @@ test("collapses tiled gaps and reserved outer space into shared boundaries", () 
   )
   assert.deepEqual(
     [right.borderTop, right.borderRight, right.borderBottom, right.borderLeft],
+    [true, true, true, false]
+  )
+  assert.deepEqual(
+    [left.outerTop, left.outerRight, left.outerBottom, left.outerLeft],
+    [true, false, true, true]
+  )
+  assert.deepEqual(
+    [right.outerTop, right.outerRight, right.outerBottom, right.outerLeft],
     [true, true, true, false]
   )
 })

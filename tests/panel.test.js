@@ -116,14 +116,38 @@ test("anchors the HUD flush without gap or Omarchy bar clearance", () => {
   assert.match(panel, /id:\s*card\b[\s\S]*?anchors\.margins:\s*0/)
 })
 
-test("collapses tiled outlines with per-side BorderSurface widths", () => {
-  assert.match(panel, /delegate:\s*BorderSurface\s*\{\s*id:\s*windowFrame/)
+test("uses even integer workspace and window geometry", () => {
   assert.match(
     panel,
-    /borderSpec:\s*\(\{[\s\S]*?top:\s*windowData\.borderTop === false \? 0 : frameBorderWidth[\s\S]*?right:\s*windowData\.borderRight === false \? 0 : frameBorderWidth[\s\S]*?bottom:\s*windowData\.borderBottom === false \? 0 : frameBorderWidth[\s\S]*?left:\s*windowData\.borderLeft === false \? 0 : frameBorderWidth/
+    /windowDiagramBorderWidth:\s*2 \* Math\.max\(1,\s*Style\.space\(1\)\)/
   )
-  assert.match(panel, /width:\s*Math\.max\(Style\.space\(4\),\s*frameRight - frameLeft\)/)
-  assert.match(panel, /height:\s*Math\.max\(Style\.space\(4\),\s*frameBottom - frameTop\)/)
+  assert.match(
+    panel,
+    /workspaceDimensions:\s*HudModel\.integerWorkspaceSize\(\s*workspaceAspect,\s*width,\s*height\s*\)/
+  )
+  assert.match(panel, /id:\s*workspaceFrame\b[\s\S]*?x:\s*Math\.floor\(\(workspaceTile\.width - width\) \/ 2\)/)
+  assert.match(panel, /id:\s*workspaceFrame\b[\s\S]*?y:\s*Math\.floor\(\(workspaceTile\.height - height\) \/ 2\)/)
+  assert.match(
+    panel,
+    /frameGeometry:\s*HudModel\.integerWindowRect\(\s*windowData,\s*layoutFrame\.width,\s*layoutFrame\.height\s*\)/
+  )
+  assert.doesNotMatch(panel, /Style\.spaceReal|frameLeft|frameTop|frameRight|frameBottom/)
+})
+
+test("centers even integer border segments on owned shared edges", () => {
+  assert.doesNotMatch(panel, /delegate:\s*BorderSurface\s*\{\s*id:\s*windowFrame/)
+  assert.match(panel, /Target:\s*Omarchy quattro caeffdc27b7ffbfe4d9d6e8cc1ba0f6c8842256f/)
+  assert.match(panel, /id:\s*windowBorderLayer\b[\s\S]*?z:\s*100000/)
+  assert.match(panel, /strokeWidth:\s*root\.windowDiagramBorderWidth/)
+  assert.match(panel, /halfStroke:\s*strokeWidth \/ 2/)
+  assert.match(
+    panel,
+    /outerRight === true\s*\? parent\.width - windowBorder\.strokeWidth\s*:\s*parent\.width - windowBorder\.halfStroke/
+  )
+  assert.match(
+    panel,
+    /outerBottom === true\s*\? parent\.height - windowBorder\.strokeWidth\s*:\s*parent\.height - windowBorder\.halfStroke/
+  )
 })
 
 test("uses opaque workspace colors and leaves window geometries unfilled", () => {

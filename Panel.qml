@@ -47,6 +47,7 @@ Item {
   readonly property int gridGap: Style.space(7)
   readonly property int tileWidth: Style.space(46)
   readonly property int tileHeight: Style.space(29)
+  readonly property int windowDiagramBorderWidth: 2 * Math.max(1, Style.space(1))
   readonly property int gridColumns: Math.max(1, workspaces.length)
   readonly property int gridRows: 1
   readonly property int gridWidth: gridColumns * tileWidth + Math.max(0, gridColumns - 1) * gridGap
@@ -497,6 +498,17 @@ Item {
                 workspaceForeground,
                 workspaceBackground
               )
+              readonly property real workspaceAspect: Math.max(
+                0.5,
+                Math.min(3, Number(workspace.aspectRatio) || (16 / 9))
+              )
+              readonly property var workspaceDimensions: HudModel.integerWorkspaceSize(
+                workspaceAspect,
+                width,
+                height
+              )
+              readonly property int workspaceWidth: workspaceDimensions.width
+              readonly property int workspaceHeight: workspaceDimensions.height
 
               width: root.tileWidth
               height: root.tileHeight
@@ -504,14 +516,10 @@ Item {
               Rectangle {
                 id: workspaceFrame
 
-                readonly property real workspaceAspect: Math.max(
-                  0.5,
-                  Math.min(3, Number(workspaceTile.workspace.aspectRatio) || (16 / 9))
-                )
-
-                anchors.centerIn: parent
-                width: Math.min(workspaceTile.width, workspaceTile.height * workspaceAspect)
-                height: Math.min(workspaceTile.height, workspaceTile.width / workspaceAspect)
+                x: Math.floor((workspaceTile.width - width) / 2)
+                y: Math.floor((workspaceTile.height - height) / 2)
+                width: workspaceTile.workspaceWidth
+                height: workspaceTile.workspaceHeight
                 color: workspaceTile.workspaceBackground
                 border.width: 0
                 radius: 0
@@ -525,100 +533,170 @@ Item {
                   Repeater {
                     model: workspaceTile.workspace.windows || []
 
-                    delegate: BorderSurface {
+                    delegate: Rectangle {
                       id: windowFrame
                       required property var modelData
                       readonly property var windowData: modelData
-                      readonly property real rawX: Number(windowData.x) || 0
-                      readonly property real rawY: Number(windowData.y) || 0
-                      readonly property real rawWidth: Math.max(0, Number(windowData.width) || 0)
-                      readonly property real rawHeight: Math.max(0, Number(windowData.height) || 0)
-                      readonly property int frameBorderWidth: windowData.fullscreen
-                        ? Math.max(1, Style.space(2))
-                        : 1
-                      readonly property color frameBorderColor: windowData.floating
-                        ? Util.alpha(
-                          workspaceTile.workspace.active ? Color.background : Color.accent,
-                          0.8
-                        )
-                        : Util.alpha(workspaceTile.workspaceForeground, 0.42)
-                      readonly property int frameLeft: Math.round(rawX * layoutFrame.width)
-                      readonly property int frameTop: Math.round(rawY * layoutFrame.height)
-                      readonly property int frameRight: Math.round(
-                        (rawX + rawWidth) * layoutFrame.width
+                      readonly property var frameGeometry: HudModel.integerWindowRect(
+                        windowData,
+                        layoutFrame.width,
+                        layoutFrame.height
                       )
-                      readonly property int frameBottom: Math.round(
-                        (rawY + rawHeight) * layoutFrame.height
-                      )
+                      readonly property int frameX: frameGeometry.x
+                      readonly property int frameY: frameGeometry.y
+                      readonly property int frameWidth: frameGeometry.width
+                      readonly property int frameHeight: frameGeometry.height
 
-                      x: frameLeft
-                      y: frameTop
-                      width: Math.max(Style.space(4), frameRight - frameLeft)
-                      height: Math.max(Style.space(4), frameBottom - frameTop)
+                      x: frameX
+                      y: frameY
+                      width: frameWidth
+                      height: frameHeight
                       color: "transparent"
-                      borderSpec: ({
-                        color: frameBorderColor,
-                        widths: {
-                          top: windowData.borderTop === false ? 0 : frameBorderWidth,
-                          right: windowData.borderRight === false ? 0 : frameBorderWidth,
-                          bottom: windowData.borderBottom === false ? 0 : frameBorderWidth,
-                          left: windowData.borderLeft === false ? 0 : frameBorderWidth
-                        },
-                        gradient: { colors: [], angle: 0, enabled: false }
-                      })
+                      border.width: 0
                       radius: 0
-                      clip: true
+                      clip: false
 
-                      Row {
-                        id: iconRow
+                      Item {
+                        anchors.fill: parent
+                        clip: true
 
-                        anchors.centerIn: parent
-                        spacing: 1
-                        scale: Math.max(0, Math.min(
-                          1,
-                          (windowFrame.width - Style.space(2)) / Math.max(1, implicitWidth),
-                          (windowFrame.height - Style.space(2)) / Math.max(1, implicitHeight)
-                        ))
+                        Row {
+                          id: iconRow
 
-                        Repeater {
-                          model: windowFrame.windowData.members || []
+                          anchors.centerIn: parent
+                          spacing: 1
+                          scale: Math.max(0, Math.min(
+                            1,
+                            (windowFrame.width - root.windowDiagramBorderWidth) / Math.max(1, implicitWidth),
+                            (windowFrame.height - root.windowDiagramBorderWidth) / Math.max(1, implicitHeight)
+                          ))
 
-                          Item {
-                            id: appIcon
-                            required property var modelData
-                            readonly property var entry: root.desktopEntry(modelData)
-                            readonly property string glyph: HudModel.appGlyph(modelData, entry)
+                          Repeater {
+                            model: windowFrame.windowData.members || []
 
-                            width: Style.space(14)
-                            height: width
+                            Item {
+                              id: appIcon
+                              required property var modelData
+                              readonly property var entry: root.desktopEntry(modelData)
+                              readonly property string glyph: HudModel.appGlyph(modelData, entry)
 
-                            OpticalGlyph {
-                              anchors.fill: parent
-                              visible: appIcon.glyph.length > 0
-                              text: appIcon.glyph
-                              color: workspaceTile.workspaceForeground
-                              fontFamily: root.iconFontFamily
-                              fontSize: appIcon.height
-                            }
+                              width: Style.space(14)
+                              height: width
 
-                            Image {
-                              anchors.fill: parent
-                              visible: appIcon.glyph.length === 0
-                              fillMode: Image.PreserveAspectFit
-                              sourceSize.width: width * Screen.devicePixelRatio
-                              sourceSize.height: height * Screen.devicePixelRatio
-                              asynchronous: true
-                              mipmap: true
-                              source: visible
-                                ? root.iconSource(appIcon.modelData, appIcon.entry)
-                                : ""
-                              layer.enabled: visible
-                              layer.effect: MultiEffect {
-                                colorization: 1.0
-                                colorizationColor: workspaceTile.fallbackIconColor
+                              OpticalGlyph {
+                                anchors.fill: parent
+                                visible: appIcon.glyph.length > 0
+                                text: appIcon.glyph
+                                color: workspaceTile.workspaceForeground
+                                fontFamily: root.iconFontFamily
+                                fontSize: appIcon.height
+                              }
+
+                              Image {
+                                anchors.fill: parent
+                                visible: appIcon.glyph.length === 0
+                                fillMode: Image.PreserveAspectFit
+                                sourceSize.width: width * Screen.devicePixelRatio
+                                sourceSize.height: height * Screen.devicePixelRatio
+                                asynchronous: true
+                                mipmap: true
+                                source: visible
+                                  ? root.iconSource(appIcon.modelData, appIcon.entry)
+                                  : ""
+                                layer.enabled: visible
+                                layer.effect: MultiEffect {
+                                  colorization: 1.0
+                                  colorizationColor: workspaceTile.fallbackIconColor
+                                }
                               }
                             }
                           }
+                        }
+                      }
+                    }
+                  }
+
+                  // Target: Omarchy quattro caeffdc27b7ffbfe4d9d6e8cc1ba0f6c8842256f.
+                  // Its BorderSurface/BorderOverlay paints asymmetric sides inward,
+                  // so even-width integer segments keep shared edges centered.
+                  Item {
+                    id: windowBorderLayer
+
+                    anchors.fill: parent
+                    z: 100000
+
+                    Repeater {
+                      model: workspaceTile.workspace.windows || []
+
+                      delegate: Item {
+                        id: windowBorder
+                        required property var modelData
+                        readonly property var windowData: modelData
+                        readonly property var frameGeometry: HudModel.integerWindowRect(
+                          windowData,
+                          windowBorderLayer.width,
+                          windowBorderLayer.height
+                        )
+                        readonly property int frameX: frameGeometry.x
+                        readonly property int frameY: frameGeometry.y
+                        readonly property int frameWidth: frameGeometry.width
+                        readonly property int frameHeight: frameGeometry.height
+                        readonly property int strokeWidth: root.windowDiagramBorderWidth
+                        readonly property int halfStroke: strokeWidth / 2
+                        readonly property color strokeColor: windowData.floating
+                          ? Util.alpha(
+                            workspaceTile.workspace.active ? Color.background : Color.accent,
+                            0.8
+                          )
+                          : Util.alpha(workspaceTile.workspaceForeground, 0.42)
+
+                        x: frameX
+                        y: frameY
+                        width: frameWidth
+                        height: frameHeight
+
+                        Rectangle {
+                          visible: windowBorder.windowData.borderTop !== false
+                          x: 0
+                          y: windowBorder.windowData.outerTop === true
+                            ? 0
+                            : -windowBorder.halfStroke
+                          width: parent.width
+                          height: windowBorder.strokeWidth
+                          color: windowBorder.strokeColor
+                        }
+
+                        Rectangle {
+                          visible: windowBorder.windowData.borderRight !== false
+                          x: windowBorder.windowData.outerRight === true
+                            ? parent.width - windowBorder.strokeWidth
+                            : parent.width - windowBorder.halfStroke
+                          y: 0
+                          width: windowBorder.strokeWidth
+                          height: parent.height
+                          color: windowBorder.strokeColor
+                        }
+
+                        Rectangle {
+                          visible: windowBorder.windowData.borderBottom !== false
+                          x: 0
+                          y: windowBorder.windowData.outerBottom === true
+                            ? parent.height - windowBorder.strokeWidth
+                            : parent.height - windowBorder.halfStroke
+                          width: parent.width
+                          height: windowBorder.strokeWidth
+                          color: windowBorder.strokeColor
+                        }
+
+                        Rectangle {
+                          visible: windowBorder.windowData.borderLeft !== false
+                          x: windowBorder.windowData.outerLeft === true
+                            ? 0
+                            : -windowBorder.halfStroke
+                          y: 0
+                          width: windowBorder.strokeWidth
+                          height: parent.height
+                          color: windowBorder.strokeColor
                         }
                       }
                     }

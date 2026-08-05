@@ -951,6 +951,10 @@ function collapseTiledGeometry(clusters) {
 
   for (i = 0; i < clusters.length; i++) {
     var outlined = clusters[i].floating || clusters[i].fullscreen
+    clusters[i].outerTop = clusters[i].y <= EDGE_EPSILON
+    clusters[i].outerRight = clusters[i].x + clusters[i].width >= 1 - EDGE_EPSILON
+    clusters[i].outerBottom = clusters[i].y + clusters[i].height >= 1 - EDGE_EPSILON
+    clusters[i].outerLeft = clusters[i].x <= EDGE_EPSILON
     clusters[i].borderTop = outlined || clusters[i].y <= EDGE_EPSILON
     clusters[i].borderRight = true
     clusters[i].borderBottom = true
@@ -968,11 +972,75 @@ function publicCluster(cluster) {
     height: cluster.height,
     floating: cluster.floating,
     fullscreen: cluster.fullscreen,
+    outerTop: cluster.outerTop,
+    outerRight: cluster.outerRight,
+    outerBottom: cluster.outerBottom,
+    outerLeft: cluster.outerLeft,
     borderTop: cluster.borderTop,
     borderRight: cluster.borderRight,
     borderBottom: cluster.borderBottom,
     borderLeft: cluster.borderLeft,
     members: cluster.members
+  }
+}
+
+function evenMaximum(value) {
+  var maximum = Math.floor(finiteNumber(value, 2))
+  return Math.max(2, maximum - Math.abs(maximum % 2))
+}
+
+function nearestEven(value, maximum) {
+  var rounded = Math.round(finiteNumber(value, 2) / 2) * 2
+  return clamp(rounded, 2, maximum)
+}
+
+// Omarchy quattro's Style.space() contract is integer-valued. Keep both
+// workspace axes even as well so equal halves and 2x2 layouts rasterize exactly.
+function integerWorkspaceSize(aspectRatio, maximumWidth, maximumHeight) {
+  var aspect = finiteNumber(aspectRatio, FALLBACK_ASPECT_RATIO)
+  if (aspect <= 0) aspect = FALLBACK_ASPECT_RATIO
+
+  var widthLimit = evenMaximum(maximumWidth)
+  var heightLimit = evenMaximum(maximumHeight)
+  var width
+  var height
+
+  if (widthLimit / heightLimit > aspect) {
+    height = heightLimit
+    width = nearestEven(height * aspect, widthLimit)
+  } else {
+    width = widthLimit
+    height = nearestEven(width / aspect, heightLimit)
+  }
+
+  return { width: width, height: height }
+}
+
+function integerWindowRect(window, workspaceWidth, workspaceHeight) {
+  window = window && typeof window === "object" ? window : {}
+
+  var frameWidth = Math.max(0, Math.floor(finiteNumber(workspaceWidth, 0)))
+  var frameHeight = Math.max(0, Math.floor(finiteNumber(workspaceHeight, 0)))
+  var left = Math.round(clamp(finiteNumber(window.x, 0), 0, 1) * frameWidth)
+  var top = Math.round(clamp(finiteNumber(window.y, 0), 0, 1) * frameHeight)
+  var right = Math.round(clamp(
+    finiteNumber(window.x, 0) + Math.max(0, finiteNumber(window.width, 0)),
+    0,
+    1
+  ) * frameWidth)
+  var bottom = Math.round(clamp(
+    finiteNumber(window.y, 0) + Math.max(0, finiteNumber(window.height, 0)),
+    0,
+    1
+  ) * frameHeight)
+
+  return {
+    x: left,
+    y: top,
+    width: Math.max(0, right - left),
+    height: Math.max(0, bottom - top),
+    right: right,
+    bottom: bottom
   }
 }
 
@@ -1145,6 +1213,8 @@ if (typeof module !== "undefined") {
     appGlyph: appGlyph,
     buildWorkspaceModel: buildWorkspaceModel,
     fallbackIconTint: fallbackIconTint,
+    integerWindowRect: integerWindowRect,
+    integerWorkspaceSize: integerWorkspaceSize,
     matchDesktopEntry: matchDesktopEntry,
     memberWebIdentity: memberWebIdentity,
     normalizeCorner: normalizeCorner,
