@@ -209,6 +209,22 @@ test("clips malformed projected rectangles to whole workspace geometry", () => {
   })
 })
 
+test("projects near-edge floating geometry onto integer workspace edges", () => {
+  assert.deepEqual(integerWindowRect({
+    x: 0.01,
+    y: 0.01,
+    width: 0.98,
+    height: 0.98
+  }, 46, 26), {
+    x: 0,
+    y: 0,
+    width: 46,
+    height: 26,
+    right: 46,
+    bottom: 26
+  })
+})
+
 test("reactively activates a cached workspace without mutating the snapshot", () => {
   const snapshot = {
     targetMonitorName: "DP-1",

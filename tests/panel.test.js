@@ -178,12 +178,19 @@ test("centers one-pixel border segments on owned shared edges", () => {
   assert.match(panel, /property real halfStroke:\s*strokeWidth \/ 2/)
   assert.match(
     panel,
-    /outerRight === true\s*\? parent\.width - windowBorder\.strokeWidth\s*:\s*parent\.width - windowBorder\.halfStroke/
+    /projectedOuterRight\s*\? parent\.width - windowBorder\.strokeWidth\s*:\s*parent\.width - windowBorder\.halfStroke/
   )
   assert.match(
     panel,
-    /outerBottom === true\s*\? parent\.height - windowBorder\.strokeWidth\s*:\s*parent\.height - windowBorder\.halfStroke/
+    /projectedOuterBottom\s*\? parent\.height - windowBorder\.strokeWidth\s*:\s*parent\.height - windowBorder\.halfStroke/
   )
+})
+
+test("insets near-edge floating borders using projected integer geometry", () => {
+  assert.match(panel, /projectedOuterTop:\s*frameY <= 0/)
+  assert.match(panel, /projectedOuterRight:\s*frameGeometry\.right >= windowBorderLayer\.width/)
+  assert.match(panel, /projectedOuterBottom:\s*frameGeometry\.bottom >= windowBorderLayer\.height/)
+  assert.match(panel, /projectedOuterLeft:\s*frameX <= 0/)
 })
 
 test("omits workspace-edge borders except on floating windows", () => {
@@ -257,6 +264,11 @@ test("centers app icon groups and painted glyph bounds in each window", () => {
 })
 
 test("renders icons at their fitted destination size without transform resampling", () => {
+  assert.match(
+    panel,
+    /members:\s*windowData && windowData\.members\s*\? windowData\.members\s*:\s*\[\]/
+  )
+  assert.doesNotMatch(panel, /Array\.isArray\(windowData\.members\)/)
   assert.match(
     panel,
     /iconSize:\s*HudModel\.integerIconSize\(\s*frameWidth,\s*frameHeight,\s*members\.length,\s*Style\.space\(14\),\s*iconSpacing,\s*root\.windowDiagramBorderWidth\s*\)/

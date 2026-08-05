@@ -592,7 +592,7 @@ Item {
                       readonly property int frameY: frameGeometry.y
                       readonly property int frameWidth: frameGeometry.width
                       readonly property int frameHeight: frameGeometry.height
-                      readonly property var members: windowData && Array.isArray(windowData.members)
+                      readonly property var members: windowData && windowData.members
                         ? windowData.members
                         : []
                       readonly property int iconSpacing: 1
@@ -738,6 +738,10 @@ Item {
                         readonly property int frameY: frameGeometry.y
                         readonly property int frameWidth: frameGeometry.width
                         readonly property int frameHeight: frameGeometry.height
+                        readonly property bool projectedOuterTop: frameY <= 0
+                        readonly property bool projectedOuterRight: frameGeometry.right >= windowBorderLayer.width
+                        readonly property bool projectedOuterBottom: frameGeometry.bottom >= windowBorderLayer.height
+                        readonly property bool projectedOuterLeft: frameX <= 0
                         readonly property int strokeWidth: root.windowDiagramBorderWidth
                         readonly property real halfStroke: strokeWidth / 2
                         readonly property color strokeColor: windowData.floating
@@ -756,7 +760,7 @@ Item {
                             && (windowBorder.windowData.floating === true
                               || windowBorder.windowData.outerTop !== true)
                           x: 0
-                          y: windowBorder.windowData.outerTop === true
+                          y: windowBorder.projectedOuterTop
                             ? 0
                             : -windowBorder.halfStroke
                           width: parent.width
@@ -768,7 +772,7 @@ Item {
                           visible: windowBorder.windowData.borderRight !== false
                             && (windowBorder.windowData.floating === true
                               || windowBorder.windowData.outerRight !== true)
-                          x: windowBorder.windowData.outerRight === true
+                          x: windowBorder.projectedOuterRight
                             ? parent.width - windowBorder.strokeWidth
                             : parent.width - windowBorder.halfStroke
                           y: 0
@@ -782,7 +786,7 @@ Item {
                             && (windowBorder.windowData.floating === true
                               || windowBorder.windowData.outerBottom !== true)
                           x: 0
-                          y: windowBorder.windowData.outerBottom === true
+                          y: windowBorder.projectedOuterBottom
                             ? parent.height - windowBorder.strokeWidth
                             : parent.height - windowBorder.halfStroke
                           width: parent.width
@@ -794,7 +798,7 @@ Item {
                           visible: windowBorder.windowData.borderLeft !== false
                             && (windowBorder.windowData.floating === true
                               || windowBorder.windowData.outerLeft !== true)
-                          x: windowBorder.windowData.outerLeft === true
+                          x: windowBorder.projectedOuterLeft
                             ? 0
                             : -windowBorder.halfStroke
                           y: 0
