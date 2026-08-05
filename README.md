@@ -1,6 +1,10 @@
 # OmaHUD
 
-Flashes a discreet Hyprland workspace indicator when you switch workspaces. It's designed for people who hide their Omarchy bar most of the time, and would like help navigating their workspaces.
+Flashes a discreet Hyprland workspace indicator when you switch workspaces. It's
+designed for people who hide their Omarchy bar most of the time, and would like
+help navigating their workspaces.
+
+![OmaHUD screenshot](screenshot.png)
 
 ## Install
 
