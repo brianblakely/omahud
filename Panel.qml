@@ -208,25 +208,33 @@ Item {
     var candidates = member && Array.isArray(member.iconCandidates)
       ? member.iconCandidates
       : []
+    var genericSource = String(
+      Quickshell.iconPath("application-x-executable", true) || ""
+    )
+
+    function actualIcon(source) {
+      var value = String(source || "")
+      return value.length > 0 && value !== genericSource ? source : ""
+    }
 
     if (entry && entry.icon) {
-      if (shell && shell.appLibrary && typeof shell.appLibrary.iconSource === "function")
-        return shell.appLibrary.iconSource(entry.icon)
+      if (shell && shell.appLibrary && typeof shell.appLibrary.iconSource === "function") {
+        var libraryIcon = actualIcon(shell.appLibrary.iconSource(entry.icon))
+        if (libraryIcon) return libraryIcon
+      }
 
-      var entryIcon = Quickshell.iconPath(String(entry.icon), true)
+      var entryIcon = actualIcon(Quickshell.iconPath(String(entry.icon), true))
       if (entryIcon) return entryIcon
     }
 
     for (var j = 0; j < candidates.length; j++) {
       var classIconCandidate = String(candidates[j] || "").trim()
       if (!classIconCandidate) continue
-      var classIcon = Quickshell.iconPath(classIconCandidate, true)
+      var classIcon = actualIcon(Quickshell.iconPath(classIconCandidate, true))
       if (classIcon) return classIcon
     }
 
-    if (shell && shell.appLibrary && typeof shell.appLibrary.iconSource === "function")
-      return shell.appLibrary.iconSource("application-x-executable")
-    return Quickshell.iconPath("application-x-executable", true)
+    return ""
   }
 
   function fallbackIconTint(foreground, surface) {
@@ -644,7 +652,15 @@ Item {
                               id: appIcon
                               required property var modelData
                               readonly property var entry: root.desktopEntry(modelData)
-                              readonly property string glyph: HudModel.appGlyph(modelData, entry)
+                              readonly property string mappedGlyph: HudModel.appGlyph(modelData, entry)
+                              readonly property var imageSource: mappedGlyph.length === 0
+                                ? root.iconSource(modelData, entry)
+                                : ""
+                              readonly property bool imageUnavailable: mappedGlyph.length === 0
+                                && (String(imageSource).length === 0 || appImage.status === Image.Error)
+                              readonly property string glyph: mappedGlyph.length > 0
+                                ? mappedGlyph
+                                : (imageUnavailable ? HudModel.genericAppGlyph() : "")
 
                               width: windowFrame.iconSize
                               height: width
@@ -683,6 +699,7 @@ Item {
                               }
 
                               Image {
+                                id: appImage
                                 anchors.fill: parent
                                 visible: appIcon.glyph.length === 0
                                 fillMode: Image.PreserveAspectFit
@@ -697,9 +714,7 @@ Item {
                                 asynchronous: true
                                 smooth: true
                                 mipmap: false
-                                source: visible
-                                  ? root.iconSource(appIcon.modelData, appIcon.entry)
-                                  : ""
+                                source: appIcon.imageSource
                                 layer.enabled: visible
                                 layer.effect: MultiEffect {
                                   colorization: 1.0
@@ -816,7 +831,7 @@ Item {
 
                   readonly property int badgeSize: Math.ceil(
                     Math.max(numberLabel.implicitWidth, numberLabel.implicitHeight)
-                  ) + Style.space(4)
+                  )
 
                   anchors.left: parent.left
                   anchors.top: parent.top

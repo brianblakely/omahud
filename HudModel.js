@@ -7,6 +7,8 @@ var COINCIDENT_EPSILON = 0.0001
 var EDGE_EPSILON = 0.0001
 // Omarchy quattro's SUPER+S binding targets this named special workspace.
 var SCRATCH_WORKSPACE_ID = "special:scratchpad"
+// nf-md-application: used only after both mapped glyph and image lookup fail.
+var GENERIC_APP_GLYPH = "\udb82\udcc6"
 
 // App glyphs already assigned by Omarchy's default menu and provided by its
 // default JetBrainsMono Nerd Font package. Keep matching exact so a web app
@@ -370,6 +372,10 @@ function appGlyph(member, entry) {
     || mappedGlyph(entryIdentities, ENTRY_ONLY_APP_GLYPHS)
   if (glyph) return glyph
   return mappedGlyph(memberAppIdentities(member), APP_GLYPHS)
+}
+
+function genericAppGlyph() {
+  return GENERIC_APP_GLYPH
 }
 
 function colorChannelLuminance(value) {
@@ -1324,6 +1330,7 @@ if (typeof module !== "undefined") {
     appGlyph: appGlyph,
     buildWorkspaceModel: buildWorkspaceModel,
     fallbackIconTint: fallbackIconTint,
+    genericAppGlyph: genericAppGlyph,
     integerIconSize: integerIconSize,
     integerWindowRect: integerWindowRect,
     integerWorkspaceSize: integerWorkspaceSize,

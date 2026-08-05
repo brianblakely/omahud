@@ -4,6 +4,7 @@ const {
   appGlyph,
   buildWorkspaceModel,
   fallbackIconTint,
+  genericAppGlyph,
   integerIconSize,
   integerWindowRect,
   integerWorkspaceSize,
@@ -826,6 +827,7 @@ test("uses Omarchy default Nerd Font glyphs only for exact app identities", () =
     className: "__proto__",
     iconCandidates: ["__proto__"]
   }, null), "")
+  assert.equal(genericAppGlyph(), "\udb82\udcc6")
 })
 
 test("lifts near-black fallback tints on light workspace surfaces", () => {

@@ -144,6 +144,14 @@ test("shows and dismisses immediately without mapping or opacity transitions", (
 test("removes workspace and number-badge outlines and places the badge flush", () => {
   assert.match(panel, /id:\s*workspaceFrame\b[^{}]*border\.width:\s*0/)
   assert.match(panel, /id:\s*numberBadge\b[^{}]*anchors\.margins:\s*0/)
+  assert.match(
+    panel,
+    /badgeSize:\s*Math\.ceil\(\s*Math\.max\(numberLabel\.implicitWidth,\s*numberLabel\.implicitHeight\)\s*\)/
+  )
+  assert.doesNotMatch(
+    panel,
+    /badgeSize:\s*Math\.ceil\([\s\S]*?\)\s*\+\s*Style\.space/
+  )
   assert.match(panel, /id:\s*numberBadge\b[^{}]*border\.width:\s*0/)
 })
 
@@ -232,7 +240,7 @@ test("uses opaque workspace colors for the badge and formats its label through t
   )
 })
 
-test("prefers default Nerd Font glyphs and colorizes image fallbacks", () => {
+test("prefers app glyphs and images before the generic Nerd Font glyph", () => {
   assert.match(panel, /import QtQuick\.Effects/)
   assert.match(
     panel,
@@ -240,7 +248,11 @@ test("prefers default Nerd Font glyphs and colorizes image fallbacks", () => {
   )
   assert.match(
     panel,
-    /glyph:\s*HudModel\.appGlyph\(modelData,\s*entry\)/
+    /mappedGlyph:\s*HudModel\.appGlyph\(modelData,\s*entry\)/
+  )
+  assert.match(
+    panel,
+    /imageUnavailable:\s*mappedGlyph\.length\s*===\s*0[\s\S]*?appImage\.status\s*===\s*Image\.Error[\s\S]*?HudModel\.genericAppGlyph\(\)/
   )
   assert.match(
     panel,
@@ -248,8 +260,10 @@ test("prefers default Nerd Font glyphs and colorizes image fallbacks", () => {
   )
   assert.match(
     panel,
-    /Image\s*\{[^{}]*visible:\s*appIcon\.glyph\.length\s*===\s*0[\s\S]*?layer\.effect:\s*MultiEffect\s*\{[^{}]*colorization:\s*1\.0[^{}]*colorizationColor:\s*workspaceTile\.fallbackIconColor/
+    /Image\s*\{[^{}]*id:\s*appImage[^{}]*visible:\s*appIcon\.glyph\.length\s*===\s*0[\s\S]*?source:\s*appIcon\.imageSource[\s\S]*?layer\.effect:\s*MultiEffect\s*\{[^{}]*colorization:\s*1\.0[^{}]*colorizationColor:\s*workspaceTile\.fallbackIconColor/
   )
+  assert.match(panel, /function actualIcon\(source\)/)
+  assert.match(panel, /return ""\s*\n\s*}\s*\n\s*\n\s*function fallbackIconTint/)
 })
 
 test("centers app icon groups and painted glyph bounds in each window", () => {
