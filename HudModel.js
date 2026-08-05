@@ -5,6 +5,8 @@ var MAX_DURATION = 10000
 var FALLBACK_ASPECT_RATIO = 16 / 9
 var COINCIDENT_EPSILON = 0.0001
 var EDGE_EPSILON = 0.0001
+// Omarchy quattro's SUPER+S binding targets this named special workspace.
+var SCRATCH_WORKSPACE_ID = "special:scratchpad"
 
 // App glyphs already assigned by Omarchy's default menu and provided by its
 // default JetBrainsMono Nerd Font package. Keep matching exact so a web app
@@ -96,6 +98,29 @@ function positiveInteger(value) {
   return parsed
 }
 
+function isScratchWorkspace(value) {
+  if (value && typeof value === "object") {
+    return nonEmptyString(value.id).toLowerCase() === SCRATCH_WORKSPACE_ID
+      || nonEmptyString(value.name).toLowerCase() === SCRATCH_WORKSPACE_ID
+  }
+
+  return nonEmptyString(value).toLowerCase() === SCRATCH_WORKSPACE_ID
+}
+
+function workspaceIdentity(workspace) {
+  return isScratchWorkspace(workspace) ? SCRATCH_WORKSPACE_ID : positiveInteger(workspace && workspace.id)
+}
+
+function compareWorkspaceIds(first, second) {
+  var firstScratch = isScratchWorkspace(first)
+  var secondScratch = isScratchWorkspace(second)
+  if (firstScratch || secondScratch) {
+    if (firstScratch && secondScratch) return 0
+    return firstScratch ? 1 : -1
+  }
+  return positiveInteger(first) - positiveInteger(second)
+}
+
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value))
 }
@@ -151,6 +176,9 @@ function normalizeMonitor(raw, index) {
   var activeWorkspace = raw.activeWorkspace && typeof raw.activeWorkspace === "object"
     ? raw.activeWorkspace
     : {}
+  var specialWorkspace = raw.specialWorkspace && typeof raw.specialWorkspace === "object"
+    ? raw.specialWorkspace
+    : {}
 
   return {
     id: raw.id === undefined || raw.id === null ? index : raw.id,
@@ -161,7 +189,8 @@ function normalizeMonitor(raw, index) {
     height: height,
     validGeometry: width > 0 && height > 0,
     focused: raw.focused === true,
-    activeWorkspaceId: positiveInteger(activeWorkspace.id)
+    activeWorkspaceId: positiveInteger(activeWorkspace.id),
+    scratchActive: isScratchWorkspace(specialWorkspace)
   }
 }
 
@@ -994,6 +1023,31 @@ function nearestEven(value, maximum) {
   return clamp(rounded, 2, maximum)
 }
 
+function integerIconSize(windowWidth, windowHeight, memberCount, maximumSize, spacing, borderAllowance) {
+  var count = positiveInteger(memberCount)
+  if (count === 0) return 0
+
+  var width = Math.max(0, Math.floor(finiteNumber(windowWidth, 0)))
+  var height = Math.max(0, Math.floor(finiteNumber(windowHeight, 0)))
+  var maximum = Math.max(0, Math.floor(finiteNumber(maximumSize, 0)))
+  var gap = Math.max(0, Math.floor(finiteNumber(spacing, 0)))
+  var inset = Math.max(0, Math.floor(finiteNumber(borderAllowance, 0)))
+  var availableWidth = Math.max(0, width - inset - gap * Math.max(0, count - 1))
+  var availableHeight = Math.max(0, height - inset)
+
+  return Math.max(0, Math.min(
+    maximum,
+    availableHeight,
+    Math.floor(availableWidth / count)
+  ))
+}
+
+function pixelSnap(value, devicePixelRatio) {
+  var ratio = finiteNumber(devicePixelRatio, 1)
+  if (ratio <= 0) ratio = 1
+  return Math.round(finiteNumber(value, 0) * ratio) / ratio
+}
+
 // Omarchy quattro's Style.space() contract is integer-valued. Keep both
 // workspace axes even as well so equal halves and 2x2 layouts rasterize exactly.
 function integerWorkspaceSize(aspectRatio, maximumWidth, maximumHeight) {
@@ -1050,12 +1104,40 @@ function workspaceAspectRatio(monitor) {
 }
 
 function workspaceLabel(value) {
+  if (isScratchWorkspace(value)) return "S"
   var workspaceId = positiveInteger(value)
   if (workspaceId === 0) return ""
   return workspaceId === 10 ? "0" : String(workspaceId)
 }
 
-function activateWorkspace(model, workspaceId, monitorName) {
+function eventParts(event, count) {
+  var parts = []
+
+  try {
+    if (event && typeof event.parse === "function") parts = event.parse(count)
+  } catch (error) {}
+
+  if (!parts || parts.length === 0) {
+    parts = String(event && event.data !== undefined ? event.data : "").split(",")
+  }
+
+  return parts || []
+}
+
+function workspaceEventId(event) {
+  return positiveInteger(eventParts(event, 2)[0])
+}
+
+function scratchEventActive(event) {
+  var parts = eventParts(event, 3)
+  for (var i = 0; i < parts.length; i++) {
+    var part = nonEmptyString(parts[i]).toLowerCase()
+    if (part === SCRATCH_WORKSPACE_ID || part === "scratchpad") return true
+  }
+  return false
+}
+
+function activateWorkspace(model, workspaceId, monitorName, scratchState) {
   model = model && typeof model === "object" ? model : {}
 
   var activeWorkspaceId = positiveInteger(workspaceId)
@@ -1066,7 +1148,21 @@ function activateWorkspace(model, workspaceId, monitorName) {
   var fallbackAspectFound = false
   var workspaces = []
   var activeFound = false
+  var scratchActive = scratchState === true || scratchState === 1
+  var scratchStateKnown = scratchState === true
+    || scratchState === false
+    || scratchState === 0
+    || scratchState === 1
   var i
+
+  if (!scratchStateKnown) {
+    for (i = 0; i < source.length; i++) {
+      if (isScratchWorkspace(source[i]) && source[i].active === true) {
+        scratchActive = true
+        break
+      }
+    }
+  }
 
   for (i = 0; i < source.length; i++) {
     var aspectWorkspace = source[i]
@@ -1088,19 +1184,21 @@ function activateWorkspace(model, workspaceId, monitorName) {
     var workspace = source[i]
     if (!workspace || typeof workspace !== "object") continue
 
-    var id = positiveInteger(workspace.id)
+    var id = workspaceIdentity(workspace)
     if (id === 0) continue
 
     var windows = Array.isArray(workspace.windows) ? workspace.windows : []
-    var active = activeWorkspaceId > 0 && id === activeWorkspaceId
+    var scratch = isScratchWorkspace(id)
+    var numberedTarget = !scratch && activeWorkspaceId > 0 && id === activeWorkspaceId
+    var active = scratch ? scratchActive : (numberedTarget && !scratchActive)
     var workspaceMonitorName = nonEmptyString(workspace.monitorName)
     var aspectRatio = Math.max(
       0.1,
       finiteNumber(workspace.aspectRatio, FALLBACK_ASPECT_RATIO)
     )
 
-    if (windows.length === 0 && !active) continue
-    if (active) activeFound = true
+    if (windows.length === 0 && !active && !numberedTarget) continue
+    if (numberedTarget) activeFound = true
 
     workspaces.push({
       id: id,
@@ -1108,6 +1206,7 @@ function activateWorkspace(model, workspaceId, monitorName) {
         ? targetMonitorName
         : workspaceMonitorName,
       active: active,
+      scratch: scratch,
       empty: windows.length === 0,
       aspectRatio: aspectRatio,
       windows: windows
@@ -1118,16 +1217,15 @@ function activateWorkspace(model, workspaceId, monitorName) {
     workspaces.push({
       id: activeWorkspaceId,
       monitorName: targetMonitorName,
-      active: true,
+      active: !scratchActive,
+      scratch: false,
       empty: true,
       aspectRatio: fallbackAspectRatio,
       windows: []
     })
   }
 
-  workspaces.sort(function (first, second) {
-    return first.id - second.id
-  })
+  workspaces.sort(function (first, second) { return compareWorkspaceIds(first.id, second.id) })
 
   return {
     targetMonitorName: targetMonitorName,
@@ -1150,14 +1248,16 @@ function buildWorkspaceModel(monitors, clients) {
       var workspace = client.workspace && typeof client.workspace === "object"
         ? client.workspace
         : {}
-      var workspaceId = positiveInteger(workspace.id)
+      var workspaceId = workspaceIdentity(workspace)
       if (workspaceId === 0) continue
 
-      var monitor = monitorForClient(client, workspaceId, normalizedMonitors, targetMonitor)
+      var monitorWorkspaceId = isScratchWorkspace(workspaceId) ? 0 : workspaceId
+      var monitor = monitorForClient(client, monitorWorkspaceId, normalizedMonitors, targetMonitor)
       var key = String(workspaceId)
       if (!buckets[key]) {
         buckets[key] = {
           id: workspaceId,
+          scratch: isScratchWorkspace(workspaceId),
           monitor: monitor,
           entries: []
         }
@@ -1169,20 +1269,28 @@ function buildWorkspaceModel(monitors, clients) {
   if (activeWorkspaceId > 0 && !buckets[String(activeWorkspaceId)]) {
     buckets[String(activeWorkspaceId)] = {
       id: activeWorkspaceId,
+      scratch: false,
       monitor: targetMonitor,
       entries: []
     }
   }
 
-  var workspaceIds = Object.keys(buckets).map(function (value) {
-    return Number(value)
-  }).sort(function (first, second) {
-    return first - second
+  if (targetMonitor && targetMonitor.scratchActive && !buckets[SCRATCH_WORKSPACE_ID]) {
+    buckets[SCRATCH_WORKSPACE_ID] = {
+      id: SCRATCH_WORKSPACE_ID,
+      scratch: true,
+      monitor: targetMonitor,
+      entries: []
+    }
+  }
+
+  var workspaceKeys = Object.keys(buckets).sort(function (first, second) {
+    return compareWorkspaceIds(buckets[first].id, buckets[second].id)
   })
 
   var workspaces = []
-  for (var workspaceIndex = 0; workspaceIndex < workspaceIds.length; workspaceIndex++) {
-    var bucket = buckets[String(workspaceIds[workspaceIndex])]
+  for (var workspaceIndex = 0; workspaceIndex < workspaceKeys.length; workspaceIndex++) {
+    var bucket = buckets[workspaceKeys[workspaceIndex]]
     var clusters = collapseTiledGeometry(clusterEntries(bucket.entries)).sort(drawingOrder)
     var windows = []
 
@@ -1193,7 +1301,10 @@ function buildWorkspaceModel(monitors, clients) {
     workspaces.push({
       id: bucket.id,
       monitorName: bucket.monitor ? bucket.monitor.name : "",
-      active: bucket.id === activeWorkspaceId,
+      active: bucket.scratch
+        ? Boolean(bucket.monitor && bucket.monitor.scratchActive)
+        : Boolean(targetMonitor && !targetMonitor.scratchActive && bucket.id === activeWorkspaceId),
+      scratch: bucket.scratch,
       empty: windows.length === 0,
       aspectRatio: workspaceAspectRatio(bucket.monitor),
       windows: windows
@@ -1213,12 +1324,16 @@ if (typeof module !== "undefined") {
     appGlyph: appGlyph,
     buildWorkspaceModel: buildWorkspaceModel,
     fallbackIconTint: fallbackIconTint,
+    integerIconSize: integerIconSize,
     integerWindowRect: integerWindowRect,
     integerWorkspaceSize: integerWorkspaceSize,
     matchDesktopEntry: matchDesktopEntry,
     memberWebIdentity: memberWebIdentity,
     normalizeCorner: normalizeCorner,
     parseDuration: parseDuration,
+    pixelSnap: pixelSnap,
+    scratchEventActive: scratchEventActive,
+    workspaceEventId: workspaceEventId,
     workspaceLabel: workspaceLabel
   }
 }

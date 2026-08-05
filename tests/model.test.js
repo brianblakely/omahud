@@ -4,12 +4,16 @@ const {
   appGlyph,
   buildWorkspaceModel,
   fallbackIconTint,
+  integerIconSize,
   integerWindowRect,
   integerWorkspaceSize,
   matchDesktopEntry,
   memberWebIdentity,
   normalizeCorner,
   parseDuration,
+  pixelSnap,
+  scratchEventActive,
+  workspaceEventId,
   workspaceLabel
 } = require("../HudModel.js")
 
@@ -86,7 +90,28 @@ test("formats workspace ten as zero without changing workspace identity", () => 
   assert.equal(workspaceLabel(9), "9")
   assert.equal(workspaceLabel(10), "0")
   assert.equal(workspaceLabel(11), "11")
+  assert.equal(workspaceLabel("special:scratchpad"), "S")
   assert.equal(workspaceLabel("invalid"), "")
+})
+
+test("reads the authoritative workspace id from workspace events", () => {
+  assert.equal(workspaceEventId({ parse: count => {
+    assert.equal(count, 2)
+    return ["7", "7"]
+  } }), 7)
+  assert.equal(workspaceEventId({ data: "9,9" }), 9)
+  assert.equal(workspaceEventId({
+    parse: () => { throw new Error("not available") },
+    data: "10,10"
+  }), 10)
+  assert.equal(workspaceEventId({ data: "special:scratchpad" }), 0)
+})
+
+test("reads Omarchy scratch activation from Hyprland special-workspace events", () => {
+  assert.equal(scratchEventActive({ data: "-98,special:scratchpad,DP-3" }), true)
+  assert.equal(scratchEventActive({ data: "scratchpad,DP-3" }), true)
+  assert.equal(scratchEventActive({ data: ",,DP-3" }), false)
+  assert.equal(scratchEventActive({ data: "-99,special:other,DP-3" }), false)
 })
 
 test("fits monitor aspects into even integer workspace dimensions", () => {
@@ -104,6 +129,22 @@ test("fits monitor aspects into even integer workspace dimensions", () => {
     assert.equal(dimensions.width % 2, 0)
     assert.equal(dimensions.height % 2, 0)
   }
+})
+
+test("renders icons directly at fitted integer pixel sizes", () => {
+  assert.equal(integerIconSize(23, 13, 1, 14, 1, 1), 12)
+  assert.equal(integerIconSize(23, 13, 2, 14, 1, 1), 10)
+  assert.equal(integerIconSize(46, 26, 3, 14, 1, 1), 14)
+  assert.equal(integerIconSize(5, 5, 3, 14, 1, 1), 0)
+  assert.equal(integerIconSize(23.9, 13.9, 1, 14.9, 1.9, 1.9), 12)
+  assert.equal(integerIconSize(23, 13, 0, 14, 1, 1), 0)
+})
+
+test("snaps icon placement to physical pixels", () => {
+  assert.equal(pixelSnap(5.5, 2), 5.5)
+  assert.equal(pixelSnap(5.5, 1), 6)
+  assert.equal(pixelSnap(5.3, 1.25), 5.6)
+  assert.equal(pixelSnap(5.3, 0), 5)
 })
 
 test("projects perfect 2x2 layouts into equal integer rectangles", () => {
@@ -131,7 +172,7 @@ test("projects perfect 2x2 layouts into equal integer rectangles", () => {
   }
 })
 
-test("gives equal halves symmetric integer border-center spans", () => {
+test("gives equal halves symmetric one-pixel border-center spans", () => {
   const workspace = integerWorkspaceSize(16 / 9, 46, 29)
   const upper = integerWindowRect(
     { x: 0.5, y: 0, width: 0.5, height: 0.5 },
@@ -143,13 +184,13 @@ test("gives equal halves symmetric integer border-center spans", () => {
     workspace.width,
     workspace.height
   )
-  const borderWidth = 2
+  const borderWidth = 1
   const outerTopCenter = borderWidth / 2
   const sharedCenter = upper.bottom
   const outerBottomCenter = lower.bottom - borderWidth / 2
 
-  assert.equal(sharedCenter - outerTopCenter, 12)
-  assert.equal(outerBottomCenter - sharedCenter, 12)
+  assert.equal(sharedCenter - outerTopCenter, 12.5)
+  assert.equal(outerBottomCenter - sharedCenter, 12.5)
 })
 
 test("clips malformed projected rectangles to whole workspace geometry", () => {
@@ -289,6 +330,43 @@ test("keeps only the active empty workspace in cached state", () => {
   assert.deepEqual(snapshot.workspaces[1].windows, [])
 })
 
+test("replaces a cached empty workspace with the event workspace immediately", () => {
+  const snapshot = {
+    targetMonitorName: "DP-1",
+    activeWorkspaceId: 7,
+    workspaces: [
+      {
+        id: 2,
+        monitorName: "DP-1",
+        active: false,
+        empty: false,
+        aspectRatio: 16 / 9,
+        windows: [{}]
+      },
+      {
+        id: 7,
+        monitorName: "DP-1",
+        active: true,
+        empty: true,
+        aspectRatio: 16 / 9,
+        windows: []
+      }
+    ]
+  }
+
+  const eventWorkspaceId = workspaceEventId({ data: "9,9" })
+  const displayed = activateWorkspace(snapshot, eventWorkspaceId, "DP-1")
+
+  assert.deepEqual(
+    displayed.workspaces.filter(workspace => workspace.empty).map(workspace => workspace.id),
+    [9]
+  )
+  assert.deepEqual(
+    displayed.workspaces.filter(workspace => workspace.active).map(workspace => workspace.id),
+    [9]
+  )
+})
+
 test("does not synthesize an empty workspace without a positive active id", () => {
   const snapshot = {
     targetMonitorName: "DP-1",
@@ -338,6 +416,51 @@ test("filters non-mapped and non-numbered clients and sorts workspace ids", () =
   assert.deepEqual(result.workspaces.map(workspace => workspace.id), [2, 10])
   assert.equal(result.workspaces[0].windows.length, 1)
   assert.equal(result.workspaces[0].active, true)
+})
+
+test("includes Omarchy's scratch workspace after numbered workspaces", () => {
+  const result = buildWorkspaceModel(
+    [monitor({
+      width: 1920,
+      height: 1080,
+      activeWorkspace: { id: 2, name: "2" },
+      specialWorkspace: { id: -98, name: "special:scratchpad" }
+    })],
+    [
+      client({ address: "0x2", workspace: { id: 2, name: "2" }, size: [1920, 1080] }),
+      client({
+        address: "0xscratch-top",
+        workspace: { id: -98, name: "special:scratchpad" },
+        at: [0, 0],
+        size: [1920, 540]
+      }),
+      client({
+        address: "0xscratch-bottom",
+        workspace: { id: -98, name: "special:scratchpad" },
+        at: [0, 540],
+        size: [1920, 540]
+      })
+    ]
+  )
+
+  assert.deepEqual(result.workspaces.map(workspace => workspace.id), [2, "special:scratchpad"])
+  assert.equal(result.workspaces[0].active, false)
+
+  const scratch = result.workspaces[1]
+  assert.equal(scratch.scratch, true)
+  assert.equal(scratch.active, true)
+  assert.equal(workspaceLabel(scratch.id), "S")
+  assert.deepEqual(
+    scratch.windows
+      .map(window => [window.x, window.y, window.width, window.height])
+      .sort((first, second) => first[1] - second[1]),
+    [[0, 0, 1, 0.5], [0, 0.5, 1, 0.5]]
+  )
+
+  const closed = activateWorkspace(result, 2, "DP-1", 0)
+  assert.deepEqual(closed.workspaces.map(workspace => workspace.id), [2, "special:scratchpad"])
+  assert.equal(closed.workspaces[0].active, true)
+  assert.equal(closed.workspaces[1].active, false)
 })
 
 test("adds the active workspace when it is empty", () => {

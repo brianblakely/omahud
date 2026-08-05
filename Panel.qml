@@ -23,6 +23,11 @@ Item {
   readonly property int focusedWorkspaceId: Hyprland.focusedWorkspace
     ? Number(Hyprland.focusedWorkspace.id) || 0
     : 0
+  property int eventWorkspaceId: 0
+  property int eventScratchState: -1
+  readonly property int displayWorkspaceId: eventWorkspaceId > 0
+    ? eventWorkspaceId
+    : focusedWorkspaceId
   readonly property string focusedMonitorName: {
     var workspace = Hyprland.focusedWorkspace
     if (workspace && workspace.monitor && workspace.monitor.name !== undefined)
@@ -33,12 +38,22 @@ Item {
   }
   readonly property var displayModel: HudModel.activateWorkspace(
     hudModel,
-    focusedWorkspaceId,
-    focusedMonitorName
+    displayWorkspaceId,
+    focusedMonitorName,
+    eventScratchState
   )
   readonly property var workspaces: displayModel && Array.isArray(displayModel.workspaces)
     ? displayModel.workspaces
     : []
+  readonly property var emptyWorkspaceSlot: ({
+    id: 0,
+    monitorName: "",
+    active: false,
+    scratch: false,
+    empty: true,
+    aspectRatio: 16 / 9,
+    windows: []
+  })
   readonly property string targetMonitorName: displayModel
     ? String(displayModel.targetMonitorName || "")
     : ""
@@ -47,7 +62,7 @@ Item {
   readonly property int gridGap: Style.space(7)
   readonly property int tileWidth: Style.space(46)
   readonly property int tileHeight: Style.space(29)
-  readonly property int windowDiagramBorderWidth: 2 * Math.max(1, Style.space(1))
+  readonly property int windowDiagramBorderWidth: 1
   readonly property int gridColumns: Math.max(1, workspaces.length)
   readonly property int gridRows: 1
   readonly property int gridWidth: gridColumns * tileWidth + Math.max(0, gridColumns - 1) * gridGap
@@ -73,6 +88,10 @@ Item {
     activeWorkspaceId: 0,
     workspaces: []
   })
+  // Omarchy quattro exposes ten numbered workspaces plus special:scratchpad.
+  // Keep their delegates alive so additions and removals are one frame update;
+  // custom workspace counts can grow this pool, but it never shrinks.
+  property int workspaceSlotCount: 11
   property bool showRequested: false
   property bool snapshotInFlight: false
   property bool snapshotQueued: false
@@ -233,6 +252,16 @@ Item {
     return opened ? "visible" : "queued"
   }
 
+  function reconcileEventWorkspace() {
+    if (eventWorkspaceId > 0 && eventWorkspaceId === focusedWorkspaceId)
+      eventWorkspaceId = 0
+  }
+
+  function reserveWorkspaceSlots(count) {
+    var requested = Math.max(11, Math.floor(Number(count) || 0))
+    if (requested > workspaceSlotCount) workspaceSlotCount = requested
+  }
+
   function showCachedModel() {
     if (!targetMonitorName || workspaces.length === 0) return false
 
@@ -306,6 +335,7 @@ Item {
       close()
       return
     }
+    eventScratchState = -1
 
     if (showRequested) {
       if (!opened) showCachedModel()
@@ -409,9 +439,20 @@ Item {
 
     function onRawEvent(event) {
       var name = String(event && event.name ? event.name : "")
-      if (name === "workspacev2") root.requestShow()
+      if (name === "workspacev2") {
+        var workspaceId = HudModel.workspaceEventId(event)
+        if (workspaceId > 0) root.eventWorkspaceId = workspaceId
+        root.requestShow()
+        Qt.callLater(root.reconcileEventWorkspace)
+      } else if (name === "activespecialv2" || name === "activespecial") {
+        root.eventScratchState = HudModel.scratchEventActive(event) ? 1 : 0
+        root.requestShow()
+      }
     }
   }
+
+  onFocusedWorkspaceIdChanged: reconcileEventWorkspace()
+  onWorkspacesChanged: reserveWorkspaceSlots(workspaces.length)
 
   Connections {
     target: DesktopEntries.applications
@@ -482,12 +523,15 @@ Item {
           columnSpacing: root.gridGap
 
           Repeater {
-            model: root.workspaces
+            model: root.workspaceSlotCount
 
             delegate: Item {
               id: workspaceTile
-              required property var modelData
-              readonly property var workspace: modelData
+              required property int index
+              readonly property var workspaceData: index < root.workspaces.length
+                ? root.workspaces[index]
+                : null
+              readonly property var workspace: workspaceData || root.emptyWorkspaceSlot
               readonly property color workspaceBackground: workspace.active
                 ? Color.foreground
                 : Color.background
@@ -512,6 +556,8 @@ Item {
 
               width: root.tileWidth
               height: root.tileHeight
+              visible: workspaceData !== null
+                && (!workspace.empty || workspace.id === root.displayWorkspaceId)
 
               Rectangle {
                 id: workspaceFrame
@@ -546,11 +592,28 @@ Item {
                       readonly property int frameY: frameGeometry.y
                       readonly property int frameWidth: frameGeometry.width
                       readonly property int frameHeight: frameGeometry.height
+                      readonly property var members: windowData && Array.isArray(windowData.members)
+                        ? windowData.members
+                        : []
+                      readonly property int iconSpacing: 1
+                      readonly property real iconPixelRatio: Math.max(
+                        1,
+                        Number(Screen.devicePixelRatio) || 1
+                      )
+                      readonly property int iconSize: HudModel.integerIconSize(
+                        frameWidth,
+                        frameHeight,
+                        members.length,
+                        Style.space(14),
+                        iconSpacing,
+                        root.windowDiagramBorderWidth
+                      )
 
                       x: frameX
                       y: frameY
                       width: frameWidth
                       height: frameHeight
+                      visible: workspaceTile.workspace.windows.indexOf(windowData) !== -1
                       color: "transparent"
                       border.width: 0
                       radius: 0
@@ -563,16 +626,20 @@ Item {
                         Row {
                           id: iconRow
 
-                          anchors.centerIn: parent
-                          spacing: 1
-                          scale: Math.max(0, Math.min(
-                            1,
-                            (windowFrame.width - root.windowDiagramBorderWidth) / Math.max(1, implicitWidth),
-                            (windowFrame.height - root.windowDiagramBorderWidth) / Math.max(1, implicitHeight)
-                          ))
+                          x: HudModel.pixelSnap(
+                            (parent.width - width) / 2,
+                            windowFrame.iconPixelRatio
+                          )
+                          y: HudModel.pixelSnap(
+                            (parent.height - height) / 2,
+                            windowFrame.iconPixelRatio
+                          )
+                          width: implicitWidth
+                          height: implicitHeight
+                          spacing: windowFrame.iconSpacing
 
                           Repeater {
-                            model: windowFrame.windowData.members || []
+                            model: windowFrame.members
 
                             Item {
                               id: appIcon
@@ -580,11 +647,35 @@ Item {
                               readonly property var entry: root.desktopEntry(modelData)
                               readonly property string glyph: HudModel.appGlyph(modelData, entry)
 
-                              width: Style.space(14)
+                              width: windowFrame.iconSize
                               height: width
+                              visible: width > 0
+
+                              TextMetrics {
+                                id: appGlyphMetrics
+
+                                font.family: root.iconFontFamily
+                                font.pixelSize: Math.max(1, Math.round(appIcon.height))
+                                text: appIcon.glyph
+                              }
 
                               OpticalGlyph {
-                                anchors.fill: parent
+                                id: appGlyph
+                                readonly property real rawVerticalCenterOffset: appIcon.glyph.length > 0
+                                  ? height / 2 - (
+                                    baselineY
+                                    + appGlyphMetrics.tightBoundingRect.y
+                                    + appGlyphMetrics.tightBoundingRect.height / 2
+                                  )
+                                  : 0
+
+                                anchors.centerIn: parent
+                                anchors.verticalCenterOffset: HudModel.pixelSnap(
+                                  rawVerticalCenterOffset,
+                                  windowFrame.iconPixelRatio
+                                )
+                                width: parent.width
+                                height: parent.height
                                 visible: appIcon.glyph.length > 0
                                 text: appIcon.glyph
                                 color: workspaceTile.workspaceForeground
@@ -596,10 +687,17 @@ Item {
                                 anchors.fill: parent
                                 visible: appIcon.glyph.length === 0
                                 fillMode: Image.PreserveAspectFit
-                                sourceSize.width: width * Screen.devicePixelRatio
-                                sourceSize.height: height * Screen.devicePixelRatio
+                                sourceSize.width: Math.max(
+                                  1,
+                                  Math.round(width * windowFrame.iconPixelRatio)
+                                )
+                                sourceSize.height: Math.max(
+                                  1,
+                                  Math.round(height * windowFrame.iconPixelRatio)
+                                )
                                 asynchronous: true
-                                mipmap: true
+                                smooth: true
+                                mipmap: false
                                 source: visible
                                   ? root.iconSource(appIcon.modelData, appIcon.entry)
                                   : ""
@@ -618,7 +716,7 @@ Item {
 
                   // Target: Omarchy quattro caeffdc27b7ffbfe4d9d6e8cc1ba0f6c8842256f.
                   // Its BorderSurface/BorderOverlay paints asymmetric sides inward,
-                  // so even-width integer segments keep shared edges centered.
+                  // so the one-pixel segments are centered on shared edges explicitly.
                   Item {
                     id: windowBorderLayer
 
@@ -642,21 +740,23 @@ Item {
                         readonly property int frameWidth: frameGeometry.width
                         readonly property int frameHeight: frameGeometry.height
                         readonly property int strokeWidth: root.windowDiagramBorderWidth
-                        readonly property int halfStroke: strokeWidth / 2
+                        readonly property real halfStroke: strokeWidth / 2
                         readonly property color strokeColor: windowData.floating
-                          ? Util.alpha(
-                            workspaceTile.workspace.active ? Color.background : Color.accent,
-                            0.8
-                          )
+                          ? (workspaceTile.workspace.active
+                            ? Color.background
+                            : Color.foreground)
                           : Util.alpha(workspaceTile.workspaceForeground, 0.42)
 
                         x: frameX
                         y: frameY
                         width: frameWidth
                         height: frameHeight
+                        visible: workspaceTile.workspace.windows.indexOf(windowData) !== -1
 
                         Rectangle {
                           visible: windowBorder.windowData.borderTop !== false
+                            && (windowBorder.windowData.floating === true
+                              || windowBorder.windowData.outerTop !== true)
                           x: 0
                           y: windowBorder.windowData.outerTop === true
                             ? 0
@@ -668,6 +768,8 @@ Item {
 
                         Rectangle {
                           visible: windowBorder.windowData.borderRight !== false
+                            && (windowBorder.windowData.floating === true
+                              || windowBorder.windowData.outerRight !== true)
                           x: windowBorder.windowData.outerRight === true
                             ? parent.width - windowBorder.strokeWidth
                             : parent.width - windowBorder.halfStroke
@@ -679,6 +781,8 @@ Item {
 
                         Rectangle {
                           visible: windowBorder.windowData.borderBottom !== false
+                            && (windowBorder.windowData.floating === true
+                              || windowBorder.windowData.outerBottom !== true)
                           x: 0
                           y: windowBorder.windowData.outerBottom === true
                             ? parent.height - windowBorder.strokeWidth
@@ -690,6 +794,8 @@ Item {
 
                         Rectangle {
                           visible: windowBorder.windowData.borderLeft !== false
+                            && (windowBorder.windowData.floating === true
+                              || windowBorder.windowData.outerLeft !== true)
                           x: windowBorder.windowData.outerLeft === true
                             ? 0
                             : -windowBorder.halfStroke

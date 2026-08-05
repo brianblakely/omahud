@@ -19,16 +19,59 @@ test("keeps every workspace on one row at half-size dimensions", () => {
   assert.match(panel, /gridRows:\s*1/)
 })
 
-test("shows cached state on workspace events before refreshing geometry", () => {
+test("uses the event workspace before refreshing cached geometry", () => {
   assert.match(
     panel,
-    /function onRawEvent\(event\)\s*\{[^{}]*name === "workspacev2"\)\s*root\.requestShow\(\)/
+    /function onRawEvent\(event\)\s*\{[\s\S]*?name === "workspacev2"\)[\s\S]*?HudModel\.workspaceEventId\(event\)[\s\S]*?root\.eventWorkspaceId = workspaceId[\s\S]*?root\.requestShow\(\)[\s\S]*?Qt\.callLater\(root\.reconcileEventWorkspace\)/
   )
   assert.match(
     panel,
     /function requestShow\(\)\s*\{[\s\S]*?showCachedModel\(\)[\s\S]*?requestSnapshot\(\)/
   )
+  assert.match(
+    panel,
+    /displayWorkspaceId:\s*eventWorkspaceId > 0\s*\? eventWorkspaceId\s*:\s*focusedWorkspaceId/
+  )
+  assert.match(
+    panel,
+    /function reconcileEventWorkspace\(\)\s*\{[^{}]*eventWorkspaceId === focusedWorkspaceId\)\s*eventWorkspaceId = 0/
+  )
   assert.doesNotMatch(panel, /snapshotDebounce|onFocusedWorkspaceChanged/)
+})
+
+test("refreshes and activates the Omarchy scratch workspace on special events", () => {
+  assert.match(
+    panel,
+    /name === "activespecialv2" \|\| name === "activespecial"\)[\s\S]*?root\.eventScratchState = HudModel\.scratchEventActive\(event\) \? 1 : 0[\s\S]*?root\.requestShow\(\)/
+  )
+  assert.match(
+    panel,
+    /HudModel\.activateWorkspace\(\s*hudModel,\s*displayWorkspaceId,\s*focusedMonitorName,\s*eventScratchState\s*\)/
+  )
+})
+
+test("reuses stable workspace slots for atomic add and remove frames", () => {
+  assert.match(panel, /property int workspaceSlotCount:\s*11/)
+  assert.match(
+    panel,
+    /function reserveWorkspaceSlots\(count\)\s*\{[^{}]*Math\.max\(11,[^{}]*if \(requested > workspaceSlotCount\) workspaceSlotCount = requested/
+  )
+  assert.match(panel, /onWorkspacesChanged:\s*reserveWorkspaceSlots\(workspaces\.length\)/)
+  assert.match(
+    panel,
+    /Repeater\s*\{\s*model:\s*root\.workspaceSlotCount\s*delegate:\s*Item\s*\{\s*id:\s*workspaceTile\s*required property int index[\s\S]*?workspaceData:\s*index < root\.workspaces\.length\s*\? root\.workspaces\[index\]\s*:\s*null/
+  )
+  assert.match(
+    panel,
+    /id:\s*workspaceTile\b[\s\S]*?visible:\s*workspaceData !== null\s*&& \(!workspace\.empty \|\| workspace\.id === root\.displayWorkspaceId\)/
+  )
+})
+
+test("hides stale window delegates while a workspace slot is reassigned", () => {
+  const staleGuards = panel.match(
+    /visible:\s*workspaceTile\.workspace\.windows\.indexOf\(windowData\) !== -1/g
+  ) || []
+  assert.equal(staleGuards.length, 2)
 })
 
 test("discards superseded snapshots before they can cancel a newer show", () => {
@@ -119,7 +162,7 @@ test("anchors the HUD flush without gap or Omarchy bar clearance", () => {
 test("uses even integer workspace and window geometry", () => {
   assert.match(
     panel,
-    /windowDiagramBorderWidth:\s*2 \* Math\.max\(1,\s*Style\.space\(1\)\)/
+    /windowDiagramBorderWidth:\s*1/
   )
   assert.match(
     panel,
@@ -134,12 +177,12 @@ test("uses even integer workspace and window geometry", () => {
   assert.doesNotMatch(panel, /Style\.spaceReal|frameLeft|frameTop|frameRight|frameBottom/)
 })
 
-test("centers even integer border segments on owned shared edges", () => {
+test("centers one-pixel border segments on owned shared edges", () => {
   assert.doesNotMatch(panel, /delegate:\s*BorderSurface\s*\{\s*id:\s*windowFrame/)
   assert.match(panel, /Target:\s*Omarchy quattro caeffdc27b7ffbfe4d9d6e8cc1ba0f6c8842256f/)
   assert.match(panel, /id:\s*windowBorderLayer\b[\s\S]*?z:\s*100000/)
   assert.match(panel, /strokeWidth:\s*root\.windowDiagramBorderWidth/)
-  assert.match(panel, /halfStroke:\s*strokeWidth \/ 2/)
+  assert.match(panel, /property real halfStroke:\s*strokeWidth \/ 2/)
   assert.match(
     panel,
     /outerRight === true\s*\? parent\.width - windowBorder\.strokeWidth\s*:\s*parent\.width - windowBorder\.halfStroke/
@@ -147,6 +190,26 @@ test("centers even integer border segments on owned shared edges", () => {
   assert.match(
     panel,
     /outerBottom === true\s*\? parent\.height - windowBorder\.strokeWidth\s*:\s*parent\.height - windowBorder\.halfStroke/
+  )
+})
+
+test("omits workspace-edge borders except on floating windows", () => {
+  for (const side of ["Top", "Right", "Bottom", "Left"]) {
+    assert.match(
+      panel,
+      new RegExp(
+        `visible: windowBorder\\.windowData\\.border${side} !== false\\s*`
+        + `&& \\(windowBorder\\.windowData\\.floating === true\\s*`
+        + `\\|\\| windowBorder\\.windowData\\.outer${side} !== true\\)`
+      )
+    )
+  }
+})
+
+test("uses the non-muted inverse foreground for floating window borders", () => {
+  assert.match(
+    panel,
+    /strokeColor:\s*windowData\.floating\s*\? \(workspaceTile\.workspace\.active\s*\? Color\.background\s*:\s*Color\.foreground\)\s*:\s*Util\.alpha\(workspaceTile\.workspaceForeground,\s*0\.42\)/
   )
 })
 
@@ -186,6 +249,33 @@ test("prefers default Nerd Font glyphs and colorizes image fallbacks", () => {
   assert.match(
     panel,
     /Image\s*\{[^{}]*visible:\s*appIcon\.glyph\.length\s*===\s*0[\s\S]*?layer\.effect:\s*MultiEffect\s*\{[^{}]*colorization:\s*1\.0[^{}]*colorizationColor:\s*workspaceTile\.fallbackIconColor/
+  )
+})
+
+test("centers app icon groups and painted glyph bounds in each window", () => {
+  assert.match(
+    panel,
+    /id:\s*iconRow\b[\s\S]*?x:\s*HudModel\.pixelSnap\([\s\S]*?\(parent\.width - width\) \/ 2[\s\S]*?y:\s*HudModel\.pixelSnap\([\s\S]*?\(parent\.height - height\) \/ 2[\s\S]*?width:\s*implicitWidth[\s\S]*?height:\s*implicitHeight/
+  )
+  assert.match(
+    panel,
+    /id:\s*appGlyph\b[\s\S]*?rawVerticalCenterOffset:[\s\S]*?baselineY[\s\S]*?appGlyphMetrics\.tightBoundingRect\.y[\s\S]*?appGlyphMetrics\.tightBoundingRect\.height \/ 2[\s\S]*?anchors\.verticalCenterOffset:\s*HudModel\.pixelSnap/
+  )
+})
+
+test("renders icons at their fitted destination size without transform resampling", () => {
+  assert.match(
+    panel,
+    /iconSize:\s*HudModel\.integerIconSize\(\s*frameWidth,\s*frameHeight,\s*members\.length,\s*Style\.space\(14\),\s*iconSpacing,\s*root\.windowDiagramBorderWidth\s*\)/
+  )
+  assert.match(panel, /id:\s*appIcon\b[\s\S]*?width:\s*windowFrame\.iconSize/)
+
+  const row = panel.match(/Row\s*\{\s*id:\s*iconRow[\s\S]*?Repeater\s*\{/)
+  assert.ok(row)
+  assert.doesNotMatch(row[0], /\bscale\s*:/)
+  assert.match(
+    panel,
+    /sourceSize\.width:\s*Math\.max\(\s*1,\s*Math\.round\(width \* windowFrame\.iconPixelRatio\)\s*\)[\s\S]*?smooth:\s*true[\s\S]*?mipmap:\s*false/
   )
 })
 
