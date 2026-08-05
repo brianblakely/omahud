@@ -4,6 +4,7 @@ var MIN_DURATION = 250
 var MAX_DURATION = 10000
 var FALLBACK_ASPECT_RATIO = 16 / 9
 var COINCIDENT_EPSILON = 0.0001
+var EDGE_EPSILON = 0.0001
 
 // App glyphs already assigned by Omarchy's default menu and provided by its
 // default JetBrainsMono Nerd Font package. Keep matching exact so a web app
@@ -766,6 +767,199 @@ function drawingOrder(first, second) {
   return first.x - second.x
 }
 
+function intervalOverlap(firstStart, firstLength, secondStart, secondLength) {
+  return Math.min(firstStart + firstLength, secondStart + secondLength)
+    - Math.max(firstStart, secondStart)
+}
+
+// Reconstruct one axis of the logical tiling from post-gap client rectangles.
+// Facing edges share a midpoint, while the outermost tiled edges become 0/1.
+function collapsedAxis(clusters, tiledIndexes, positionKey, sizeKey, crossPositionKey, crossSizeKey) {
+  if (tiledIndexes.length === 0) return null
+
+  var edges = []
+  var groups = unionFind(tiledIndexes.length * 2)
+  var i
+  var j
+
+  for (i = 0; i < tiledIndexes.length; i++) {
+    var cluster = clusters[tiledIndexes[i]]
+    var start = cluster[positionKey]
+    var end = start + cluster[sizeKey]
+    edges.push({
+      clusterIndex: tiledIndexes[i],
+      localIndex: i,
+      start: true,
+      value: start,
+      crossStart: cluster[crossPositionKey],
+      crossLength: cluster[crossSizeKey]
+    })
+    edges.push({
+      clusterIndex: tiledIndexes[i],
+      localIndex: i,
+      start: false,
+      value: end,
+      crossStart: cluster[crossPositionKey],
+      crossLength: cluster[crossSizeKey]
+    })
+  }
+
+  // Hyprland gives clients their post-gap rectangles. Equal edges are already
+  // one logical split; facing edges separated by a gap become one below.
+  for (i = 0; i < edges.length; i++) {
+    for (j = i + 1; j < edges.length; j++) {
+      if (Math.abs(edges[i].value - edges[j].value) <= EDGE_EPSILON) {
+        groups.join(i, j)
+      }
+    }
+  }
+
+  for (i = 0; i < edges.length; i++) {
+    var trailing = edges[i]
+    if (trailing.start) continue
+
+    var nearestDistance = Infinity
+    var nearest = []
+    for (j = 0; j < edges.length; j++) {
+      var leading = edges[j]
+      if (!leading.start || leading.clusterIndex === trailing.clusterIndex) continue
+      if (intervalOverlap(
+        trailing.crossStart,
+        trailing.crossLength,
+        leading.crossStart,
+        leading.crossLength
+      ) <= EDGE_EPSILON) continue
+
+      var distance = leading.value - trailing.value
+      if (distance < -EDGE_EPSILON) continue
+
+      if (distance < nearestDistance - EDGE_EPSILON) {
+        nearestDistance = distance
+        nearest = [j]
+      } else if (Math.abs(distance - nearestDistance) <= EDGE_EPSILON) {
+        nearest.push(j)
+      }
+    }
+
+    for (j = 0; j < nearest.length; j++) groups.join(i, nearest[j])
+  }
+
+  var minimum = Infinity
+  var maximum = -Infinity
+  for (i = 0; i < tiledIndexes.length; i++) {
+    var tiled = clusters[tiledIndexes[i]]
+    minimum = Math.min(minimum, tiled[positionKey])
+    maximum = Math.max(maximum, tiled[positionKey] + tiled[sizeKey])
+  }
+
+  var span = maximum - minimum
+  if (!isFinite(span) || span <= EDGE_EPSILON) return null
+
+  var groupBounds = {}
+  for (i = 0; i < edges.length; i++) {
+    var groupKey = String(groups.root(i))
+    if (!groupBounds[groupKey]) {
+      groupBounds[groupKey] = { minimum: edges[i].value, maximum: edges[i].value }
+    } else {
+      groupBounds[groupKey].minimum = Math.min(groupBounds[groupKey].minimum, edges[i].value)
+      groupBounds[groupKey].maximum = Math.max(groupBounds[groupKey].maximum, edges[i].value)
+    }
+  }
+
+  var edgeTargets = []
+  var anchors = []
+  for (i = 0; i < edges.length; i++) {
+    var bounds = groupBounds[String(groups.root(i))]
+    var midpoint = (bounds.minimum + bounds.maximum) / 2
+    var target = clamp((midpoint - minimum) / span, 0, 1)
+    edgeTargets.push(target)
+    anchors.push({ source: edges[i].value, target: target })
+  }
+
+  anchors.sort(function (first, second) {
+    if (first.source !== second.source) return first.source - second.source
+    return first.target - second.target
+  })
+
+  function map(value) {
+    value = finiteNumber(value, minimum)
+    if (value <= anchors[0].source) return anchors[0].target
+    if (value >= anchors[anchors.length - 1].source)
+      return anchors[anchors.length - 1].target
+
+    for (var anchorIndex = 1; anchorIndex < anchors.length; anchorIndex++) {
+      var right = anchors[anchorIndex]
+      if (value > right.source) continue
+
+      var left = anchors[anchorIndex - 1]
+      var sourceSpan = right.source - left.source
+      if (sourceSpan <= EDGE_EPSILON) return right.target
+      var progress = (value - left.source) / sourceSpan
+      return left.target + (right.target - left.target) * progress
+    }
+
+    return anchors[anchors.length - 1].target
+  }
+
+  return {
+    starts: edgeTargets.filter(function (_, index) { return index % 2 === 0 }),
+    ends: edgeTargets.filter(function (_, index) { return index % 2 === 1 }),
+    map: map
+  }
+}
+
+function collapseTiledGeometry(clusters) {
+  var tiledIndexes = []
+  var i
+
+  for (i = 0; i < clusters.length; i++) {
+    if (!clusters[i].floating && !clusters[i].fullscreen) tiledIndexes.push(i)
+  }
+
+  var horizontal = collapsedAxis(clusters, tiledIndexes, "x", "width", "y", "height")
+  var vertical = collapsedAxis(clusters, tiledIndexes, "y", "height", "x", "width")
+
+  for (i = 0; i < tiledIndexes.length; i++) {
+    var cluster = clusters[tiledIndexes[i]]
+    if (horizontal) {
+      cluster.x = horizontal.starts[i]
+      cluster.width = Math.max(0, horizontal.ends[i] - horizontal.starts[i])
+    }
+    if (vertical) {
+      cluster.y = vertical.starts[i]
+      cluster.height = Math.max(0, vertical.ends[i] - vertical.starts[i])
+    }
+  }
+
+  // Floating windows keep their relationship to the tiled layout while the
+  // same removed outer reservations and inner gaps are compressed beneath them.
+  for (i = 0; i < clusters.length; i++) {
+    var floating = clusters[i]
+    if (!floating.floating || floating.fullscreen) continue
+
+    if (horizontal) {
+      var floatingRight = horizontal.map(floating.x + floating.width)
+      floating.x = horizontal.map(floating.x)
+      floating.width = Math.max(0, floatingRight - floating.x)
+    }
+    if (vertical) {
+      var floatingBottom = vertical.map(floating.y + floating.height)
+      floating.y = vertical.map(floating.y)
+      floating.height = Math.max(0, floatingBottom - floating.y)
+    }
+  }
+
+  for (i = 0; i < clusters.length; i++) {
+    var outlined = clusters[i].floating || clusters[i].fullscreen
+    clusters[i].borderTop = outlined || clusters[i].y <= EDGE_EPSILON
+    clusters[i].borderRight = true
+    clusters[i].borderBottom = true
+    clusters[i].borderLeft = outlined || clusters[i].x <= EDGE_EPSILON
+  }
+
+  return clusters
+}
+
 function publicCluster(cluster) {
   return {
     x: cluster.x,
@@ -774,6 +968,10 @@ function publicCluster(cluster) {
     height: cluster.height,
     floating: cluster.floating,
     fullscreen: cluster.fullscreen,
+    borderTop: cluster.borderTop,
+    borderRight: cluster.borderRight,
+    borderBottom: cluster.borderBottom,
+    borderLeft: cluster.borderLeft,
     members: cluster.members
   }
 }
@@ -917,7 +1115,7 @@ function buildWorkspaceModel(monitors, clients) {
   var workspaces = []
   for (var workspaceIndex = 0; workspaceIndex < workspaceIds.length; workspaceIndex++) {
     var bucket = buckets[String(workspaceIds[workspaceIndex])]
-    var clusters = clusterEntries(bucket.entries).sort(drawingOrder)
+    var clusters = collapseTiledGeometry(clusterEntries(bucket.entries)).sort(drawingOrder)
     var windows = []
 
     for (var clusterIndex = 0; clusterIndex < clusters.length; clusterIndex++) {

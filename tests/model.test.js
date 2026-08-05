@@ -327,6 +327,88 @@ test("normalizes scaled, offset, rotated, and clipped monitor geometry", () => {
   closeTo(bottomRight.height, 1 - (1300 / 1500))
 })
 
+test("collapses tiled gaps and reserved outer space into shared boundaries", () => {
+  const result = buildWorkspaceModel(
+    [monitor({ width: 1920, height: 1080 })],
+    [
+      client({
+        address: "0xleft",
+        at: [10, 40],
+        size: [945, 1030]
+      }),
+      client({
+        address: "0xright",
+        at: [965, 40],
+        size: [945, 1030]
+      })
+    ]
+  )
+
+  const left = result.workspaces[0].windows.find(window =>
+    window.members[0].address === "0xleft"
+  )
+  const right = result.workspaces[0].windows.find(window =>
+    window.members[0].address === "0xright"
+  )
+
+  closeTo(left.x, 0)
+  closeTo(left.y, 0)
+  closeTo(left.width, 0.5)
+  closeTo(left.height, 1)
+  closeTo(right.x, 0.5)
+  closeTo(right.y, 0)
+  closeTo(right.width, 0.5)
+  closeTo(right.height, 1)
+  assert.deepEqual(
+    [left.borderTop, left.borderRight, left.borderBottom, left.borderLeft],
+    [true, true, true, true]
+  )
+  assert.deepEqual(
+    [right.borderTop, right.borderRight, right.borderBottom, right.borderLeft],
+    [true, true, true, false]
+  )
+})
+
+test("collapses both branches of a tiled split onto one separator", () => {
+  const result = buildWorkspaceModel(
+    [monitor()],
+    [
+      client({ address: "0xleft", at: [10, 10], size: [485, 980] }),
+      client({ address: "0xtop", at: [505, 10], size: [485, 485] }),
+      client({ address: "0xbottom", at: [505, 505], size: [485, 485] })
+    ]
+  )
+
+  const windows = Object.fromEntries(result.workspaces[0].windows.map(window => [
+    window.members[0].address,
+    window
+  ]))
+
+  closeTo(windows["0xleft"].x + windows["0xleft"].width, 0.5)
+  closeTo(windows["0xtop"].x, 0.5)
+  closeTo(windows["0xbottom"].x, 0.5)
+  closeTo(windows["0xtop"].y + windows["0xtop"].height, 0.5)
+  closeTo(windows["0xbottom"].y, 0.5)
+  assert.equal(windows["0xtop"].borderLeft, false)
+  assert.equal(windows["0xbottom"].borderLeft, false)
+  assert.equal(windows["0xbottom"].borderTop, false)
+})
+
+test("keeps a large tiled window's shared edge collapsed", () => {
+  const result = buildWorkspaceModel(
+    [monitor()],
+    [
+      client({ address: "0xnarrow", at: [10, 10], size: [90, 980] }),
+      client({ address: "0xwide", at: [110, 10], size: [880, 980] })
+    ]
+  )
+
+  const wide = result.workspaces[0].windows.find(window =>
+    window.members[0].address === "0xwide"
+  )
+  assert.equal(wide.borderLeft, false)
+})
+
 test("clusters explicit groups and coincident rectangles while preserving members", () => {
   const result = buildWorkspaceModel(
     [monitor()],

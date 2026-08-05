@@ -438,32 +438,6 @@ Item {
       readonly property bool targetScreen: root.monitorName(modelData) === root.targetMonitorName
       readonly property bool cornerLeft: root.selectedCorner.indexOf("left") !== -1
       readonly property bool cornerTop: root.selectedCorner.indexOf("top") === 0
-      readonly property string barPosition: root.shell && root.shell.barConfig
-        ? String(root.shell.barConfig.position || "top")
-        : "top"
-      readonly property bool barVertical: barPosition === "left" || barPosition === "right"
-      readonly property int fallbackBarSize: barVertical
-        ? Style.bar.sizeVertical
-        : Style.bar.sizeHorizontal
-      readonly property bool barVisible: !root.shell || !root.shell.bar
-        || !("barHidden" in root.shell.bar)
-        || root.shell.bar.barHidden !== true
-      readonly property int liveBarSize: root.shell && root.shell.bar
-        && ("barSize" in root.shell.bar)
-        ? Math.max(0, Number(root.shell.bar.barSize) || fallbackBarSize)
-        : fallbackBarSize
-      readonly property int leftClearance: barVisible && barPosition === "left"
-        ? liveBarSize + Style.gapsOut
-        : Style.gapsOut
-      readonly property int rightClearance: barVisible && barPosition === "right"
-        ? liveBarSize + Style.gapsOut
-        : Style.gapsOut
-      readonly property int topClearance: barVisible && barPosition === "top"
-        ? liveBarSize + Style.gapsOut
-        : Style.gapsOut
-      readonly property int bottomClearance: barVisible && barPosition === "bottom"
-        ? liveBarSize + Style.gapsOut
-        : Style.gapsOut
 
       screen: modelData
       visible: true
@@ -490,10 +464,7 @@ Item {
         anchors.right: panel.cornerLeft ? undefined : parent.right
         anchors.top: panel.cornerTop ? parent.top : undefined
         anchors.bottom: panel.cornerTop ? undefined : parent.bottom
-        anchors.leftMargin: panel.leftClearance
-        anchors.rightMargin: panel.rightClearance
-        anchors.topMargin: panel.topClearance
-        anchors.bottomMargin: panel.bottomClearance
+        anchors.margins: 0
         color: Util.alpha(Color.background, 0.94)
         borderSpec: root.hudBorderSpec
         radius: 0
@@ -554,25 +525,47 @@ Item {
                   Repeater {
                     model: workspaceTile.workspace.windows || []
 
-                    delegate: Rectangle {
+                    delegate: BorderSurface {
                       id: windowFrame
                       required property var modelData
                       readonly property var windowData: modelData
+                      readonly property real rawX: Number(windowData.x) || 0
+                      readonly property real rawY: Number(windowData.y) || 0
                       readonly property real rawWidth: Math.max(0, Number(windowData.width) || 0)
                       readonly property real rawHeight: Math.max(0, Number(windowData.height) || 0)
-
-                      x: Math.round((Number(windowData.x) || 0) * layoutFrame.width)
-                      y: Math.round((Number(windowData.y) || 0) * layoutFrame.height)
-                      width: Math.max(Style.space(4), Math.round(rawWidth * layoutFrame.width))
-                      height: Math.max(Style.space(4), Math.round(rawHeight * layoutFrame.height))
-                      color: "transparent"
-                      border.color: windowData.floating
+                      readonly property int frameBorderWidth: windowData.fullscreen
+                        ? Math.max(1, Style.space(2))
+                        : 1
+                      readonly property color frameBorderColor: windowData.floating
                         ? Util.alpha(
                           workspaceTile.workspace.active ? Color.background : Color.accent,
                           0.8
                         )
                         : Util.alpha(workspaceTile.workspaceForeground, 0.42)
-                      border.width: windowData.fullscreen ? Math.max(1, Style.space(2)) : 1
+                      readonly property int frameLeft: Math.round(rawX * layoutFrame.width)
+                      readonly property int frameTop: Math.round(rawY * layoutFrame.height)
+                      readonly property int frameRight: Math.round(
+                        (rawX + rawWidth) * layoutFrame.width
+                      )
+                      readonly property int frameBottom: Math.round(
+                        (rawY + rawHeight) * layoutFrame.height
+                      )
+
+                      x: frameLeft
+                      y: frameTop
+                      width: Math.max(Style.space(4), frameRight - frameLeft)
+                      height: Math.max(Style.space(4), frameBottom - frameTop)
+                      color: "transparent"
+                      borderSpec: ({
+                        color: frameBorderColor,
+                        widths: {
+                          top: windowData.borderTop === false ? 0 : frameBorderWidth,
+                          right: windowData.borderRight === false ? 0 : frameBorderWidth,
+                          bottom: windowData.borderBottom === false ? 0 : frameBorderWidth,
+                          left: windowData.borderLeft === false ? 0 : frameBorderWidth
+                        },
+                        gradient: { colors: [], angle: 0, enabled: false }
+                      })
                       radius: 0
                       clip: true
 

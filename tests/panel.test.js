@@ -111,6 +111,21 @@ test("removes workspace and number-badge outlines and places the badge flush", (
   assert.match(panel, /id:\s*numberBadge\b[^{}]*border\.width:\s*0/)
 })
 
+test("anchors the HUD flush without gap or Omarchy bar clearance", () => {
+  assert.doesNotMatch(panel, /Style\.gapsOut|barPosition|barVisible|liveBarSize|Clearance/)
+  assert.match(panel, /id:\s*card\b[\s\S]*?anchors\.margins:\s*0/)
+})
+
+test("collapses tiled outlines with per-side BorderSurface widths", () => {
+  assert.match(panel, /delegate:\s*BorderSurface\s*\{\s*id:\s*windowFrame/)
+  assert.match(
+    panel,
+    /borderSpec:\s*\(\{[\s\S]*?top:\s*windowData\.borderTop === false \? 0 : frameBorderWidth[\s\S]*?right:\s*windowData\.borderRight === false \? 0 : frameBorderWidth[\s\S]*?bottom:\s*windowData\.borderBottom === false \? 0 : frameBorderWidth[\s\S]*?left:\s*windowData\.borderLeft === false \? 0 : frameBorderWidth/
+  )
+  assert.match(panel, /width:\s*Math\.max\(Style\.space\(4\),\s*frameRight - frameLeft\)/)
+  assert.match(panel, /height:\s*Math\.max\(Style\.space\(4\),\s*frameBottom - frameTop\)/)
+})
+
 test("uses opaque workspace colors and leaves window geometries unfilled", () => {
   assert.match(
     panel,
