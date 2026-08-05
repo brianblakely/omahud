@@ -613,7 +613,6 @@ Item {
                       y: frameY
                       width: frameWidth
                       height: frameHeight
-                      visible: workspaceTile.workspace.windows.indexOf(windowData) !== -1
                       color: "transparent"
                       border.width: 0
                       radius: 0
@@ -751,7 +750,6 @@ Item {
                         y: frameY
                         width: frameWidth
                         height: frameHeight
-                        visible: workspaceTile.workspace.windows.indexOf(windowData) !== -1
 
                         Rectangle {
                           visible: windowBorder.windowData.borderTop !== false

@@ -67,13 +67,6 @@ test("reuses stable workspace slots for atomic add and remove frames", () => {
   )
 })
 
-test("hides stale window delegates while a workspace slot is reassigned", () => {
-  const staleGuards = panel.match(
-    /visible:\s*workspaceTile\.workspace\.windows\.indexOf\(windowData\) !== -1/g
-  ) || []
-  assert.equal(staleGuards.length, 2)
-})
-
 test("discards superseded snapshots before they can cancel a newer show", () => {
   assert.match(
     panel,
